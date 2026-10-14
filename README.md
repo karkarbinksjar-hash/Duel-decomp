@@ -6,7 +6,7 @@ A native Android, portrait-oriented Yu-Gi-Oh! card game engine inspired by the a
 
 ## Architecture & Legal Compliance
 
-The engine **does not ship with copyrighted game assets or full ROMs**. Instead, it dynamically extracts, parses, and rebuilds game graphics, audio, card data, and text at runtime from user-supplied official Game Boy Color (GBC) and Game Boy Advance (GBA) Yu-Gi-Oh! ROM cartridges.
+The engine **does not ship with copyrighted game assets or full ROMs**. It is strictly a clean-room decompiled native runner for users to play their legally obtained cartridge dumps. The engine dynamically extracts, parses, and rebuilds game graphics, audio, card data, and text at runtime from user-supplied official Game Boy Color (GBC) and Game Boy Advance (GBA) Yu-Gi-Oh! cartridges.
 
 ### Base Target & Checksum Verification
 - **Primary GBC Entry Point**: *Yu-Gi-Oh! Dark Duel Stories* (USA)
@@ -19,29 +19,37 @@ The engine **does not ship with copyrighted game assets or full ROMs**. Instead,
 
 ## Key Features
 
-1. **Clean ROM Ingestion Pipeline**:
-   - `RomValidator`: Cryptographic SHA-1 and CRC-32 validation against canonical No-Intro cartridge headers.
-   - `GbcTileDecoder`: Decodes 2bpp Game Boy Color planar graphics and 15-bit BGR color palettes into Android native textures.
-   - `GbaTileDecoder`: Modular 4bpp/8bpp tile decoder for Game Boy Advance card artwork expansions.
-   - `CardDataExtractor`: Rebuilds 800-card statistical tables (ATK/DEF, Level, Attributes, Alignment, Lore).
-   - `RomAssetCache`: In-memory and disk texture cache for extracted assets.
+1. **Strict Clean-Room ROM Ingestion Pipeline**:
+   - `DdsRomParser`: Parses Nintendo Game Boy Color cartridge headers (Title, MBC5 controller, CGB mode flag, ROM/RAM size, checksums) directly from ROM streams.
+   - `RomValidator`: Cryptographic SHA-1 and CRC-32 validation against canonical No-Intro cartridge headers. Gameplay remains strictly locked until an official cartridge dump is validated.
+   - `GbcTileDecoder`: Decodes 2bpp Game Boy Color planar graphics and 15-bit BGR color palettes (`0b0BBBBBGGGGGRRRRR`) into Android native textures.
+   - `CardArtRenderer`: Renders authentic Yu-Gi-Oh! card frames (tan for Normal Monsters, amber-orange for Effect Monsters, teal for Spells, magenta for Traps), attribute gems, star counters, and framed illustrations without brown static noise.
+   - `CardDataExtractor`: Rebuilds 800-card statistical tables (ATK/DEF, Level, Attributes, Alignment, 8-digit Passcodes, Lore).
+   - `RomAssetCache`: Dynamic in-memory texture cache populated exclusively upon verified ROM load.
 
 2. **Mobile UX & Portrait Architecture**:
    - Strictly locked to **Portrait Mode**.
-   - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, animated Life Points counter).
+   - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, facedown hand cards, animated Life Points bar, and clickable Graveyard counter).
    - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), clash animations, battle result popups, and real-time combat ticker.
-   - **Bottom Section**: Player playfield, interactive horizontal hand carousel, and action controls (Summon, Set DEF, Activate Spell, Set Trap, Declare Attack, End Turn).
+   - **Bottom Section**: Player playfield, interactive horizontal hand carousel with card elevation, context-sensitive action controls (Summon, Set DEF, Activate Spell, Set Trap, Declare Attack, End Turn), and Graveyard counter.
 
-3. **Game Boy APU Chiptune Synthesizer**:
+3. **Authentic Dark Duel Stories Rules & Traps**:
+   - **DDS Elemental Alignment Dominance Wheel**:
+     $$\text{Shadow/Dark} \rightarrow \text{Light} \rightarrow \text{Fiend} \rightarrow \text{Dreams} \rightarrow \text{Pyro} \rightarrow \text{Forest} \rightarrow \text{Wind} \rightarrow \text{Earth} \rightarrow \text{Thunder} \rightarrow \text{Aqua} \rightarrow \text{Pyro}$$
+     Monsters with an elemental advantage automatically overcome raw ATK/DEF statistics.
+   - **Counter Traps**: Implemented *Mirror Force* (destroys attacking monsters on declaration) and *Trap Hole* (destroys monsters with $\ge 1000$ ATK upon summon).
+   - **Card Passcodes**: `CardPasscodeRegistry` supporting canonical 8-digit DDS passcodes.
+
+4. **Game Boy APU Chiptune Synthesizer**:
    - Pure Kotlin sound generator recreating the 4 Game Boy sound channels:
      - Pulse 1 & Pulse 2 (variable duty cycles and pitch sweeps)
      - Channel 4 LFSR pseudo-random noise generator
    - Authentic chiptune audio synthesized for card draws, monster summons, attack clashes, and victory fanfares.
 
-4. **CI/CD & Release Automation**:
+5. **CI/CD & Release Automation**:
    - Full Gradle Version Catalog (`gradle/libs.versions.toml`).
-   - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running `./gradlew test` and `./gradlew assembleRelease` on every Pull Request.
-   - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v1.0.0`), supporting repository signing keys (`ANDROID_KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) and automatic GitHub Release drafting.
+   - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running `./gradlew test` and `./gradlew assembleRelease` on every Pull Request and push to `main`.
+   - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building and signing APK binaries with Android SDK `apksigner`.
 
 ---
 
