@@ -4,8 +4,7 @@ import com.yugioh.recomp.core.engine.Card
 import com.yugioh.recomp.core.engine.CardAttribute
 import com.yugioh.recomp.core.engine.CardType
 import com.yugioh.recomp.core.engine.MonsterType
-import com.yugioh.recomp.core.rom.CardArtRenderer
-import com.yugioh.recomp.core.rom.RomAssetCache
+import com.yugioh.recomp.core.rom.*
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -80,14 +79,17 @@ class CardArtRendererTest {
     }
 
     @Test
-    fun testRomAssetCacheAutoPopulation() {
+    fun testRomAssetCachePopulationFromRom() {
         RomAssetCache.reset()
         assertFalse(RomAssetCache.isAssetPipelineReady)
 
-        // Accessing cards should auto-populate canonical database
+        // Populate with synthetic test cartridge dump
+        val romBytes = RomValidator.createSyntheticDdsRom()
+        RomAssetCache.populateFromRom(RomTarget.DARK_DUEL_STORIES_USA, romBytes)
+
+        assertTrue(RomAssetCache.isAssetPipelineReady)
         val cards = RomAssetCache.getAllCards()
         assertTrue(cards.isNotEmpty())
-        assertTrue(RomAssetCache.isAssetPipelineReady)
 
         val card1 = RomAssetCache.getCard(1)
         assertNotNull(card1)
@@ -104,5 +106,18 @@ class CardArtRendererTest {
         val back = RomAssetCache.getCardBack()
         assertEquals(96, back.width)
         assertEquals(140, back.height)
+    }
+
+    @Test
+    fun testDdsRomParser() {
+        val synthRom = RomValidator.createSyntheticDdsRom()
+        val header = com.yugioh.recomp.core.rom.DdsRomParser.parseHeader(synthRom)
+
+        assertEquals("YU-GI-OH! DDS", header.title)
+        assertTrue(header.isCgbOnly)
+        assertTrue(header.cartridgeType.contains("MBC5"))
+
+        val cards = com.yugioh.recomp.core.rom.DdsRomParser.extractCardsFromRom(synthRom)
+        assertTrue(cards.isNotEmpty())
     }
 }

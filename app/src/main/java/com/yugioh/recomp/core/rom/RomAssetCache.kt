@@ -29,17 +29,16 @@ object RomAssetCache {
         cardFullTextures.clear()
         activeTarget = target
 
-        // 1. Extract Cards
-        val cards = CardDataExtractor.extractCards(romBytes)
+        // 1. Extract Cards directly from user-supplied ROM bytes
+        val cards = DdsRomParser.extractCardsFromRom(romBytes)
         for (card in cards) {
             cardDatabase[card.id] = card
         }
 
-        // 2. Synthesize High-Fidelity Artwork & Full Framed Card Textures
+        // 2. Extract and decode 2bpp tiles with elemental palettes from ROM
         for (card in cards) {
-            // Render beautiful central illustration (64x64)
-            val artPixels = CardArtRenderer.renderCardArtwork(card, 64, 64)
-            cardArtSprites[card.id] = DecodedSprite(64, 64, artPixels)
+            val sprite = DdsRomParser.extractCardSprite(romBytes, card, 64, 64)
+            cardArtSprites[card.id] = sprite
 
             // Render complete Yu-Gi-Oh! card frame (96x140)
             val fullPixels = CardArtRenderer.renderFullCard(card, 96, 140)
@@ -53,28 +52,9 @@ object RomAssetCache {
         isAssetPipelineReady = true
     }
 
-    /**
-     * Pre-populates the cache with canonical Dark Duel Stories card database
-     * so the engine can duel immediately in demo/instant mode without waiting for a ROM.
-     */
-    fun populateWithCanonicalDatabase() {
-        val dummyTarget = RomTarget.DARK_DUEL_STORIES_USA
-        populateFromRom(dummyTarget, ByteArray(0))
-    }
+    fun getAllCards(): List<Card> = cardDatabase.values.toList()
 
-    fun getAllCards(): List<Card> {
-        if (cardDatabase.isEmpty()) {
-            populateWithCanonicalDatabase()
-        }
-        return cardDatabase.values.toList()
-    }
-
-    fun getCard(id: Int): Card? {
-        if (cardDatabase.isEmpty()) {
-            populateWithCanonicalDatabase()
-        }
-        return cardDatabase[id]
-    }
+    fun getCard(id: Int): Card? = cardDatabase[id]
 
     fun getCardSprite(cardId: Int): DecodedSprite {
         return cardArtSprites[cardId] ?: run {

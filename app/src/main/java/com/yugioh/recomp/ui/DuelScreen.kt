@@ -48,6 +48,8 @@ fun DuelScreen(
     var selectedCardHandIndex by remember { mutableStateOf<Int?>(null) }
     var selectedPlayerMonsterSlot by remember { mutableStateOf<Int?>(null) }
     var inspectingCard by remember { mutableStateOf<Card?>(null) }
+    var viewingGraveyardTitle by remember { mutableStateOf<String?>(null) }
+    var viewingGraveyardCards by remember { mutableStateOf<List<Card>?>(null) }
 
     // Sound effect trigger helper
     fun playSfx(type: String) {
@@ -94,7 +96,11 @@ fun DuelScreen(
                         refresh()
                     }
                 },
-                onInspectCard = { inspectingCard = it }
+                onInspectCard = { inspectingCard = it },
+                onOpenGraveyard = {
+                    viewingGraveyardTitle = "${engine.opponent.name}'s Graveyard"
+                    viewingGraveyardCards = engine.opponent.graveyard.toList()
+                }
             )
 
             // ==============================================================
@@ -165,7 +171,11 @@ fun DuelScreen(
                         refresh()
                     }
                 },
-                onInspectCard = { inspectingCard = it }
+                onInspectCard = { inspectingCard = it },
+                onOpenGraveyard = {
+                    viewingGraveyardTitle = "${engine.player.name}'s Graveyard"
+                    viewingGraveyardCards = engine.player.graveyard.toList()
+                }
             )
 
             // Hand Carousel & Action Bar
@@ -237,6 +247,16 @@ fun DuelScreen(
             CardDetailDialog(card = card, onDismiss = { inspectingCard = null })
         }
 
+        // Graveyard Modal
+        viewingGraveyardCards?.let { gyCards ->
+            GraveyardDialog(
+                title = viewingGraveyardTitle ?: "Graveyard",
+                cards = gyCards,
+                onCardClick = { card -> inspectingCard = card },
+                onDismiss = { viewingGraveyardCards = null }
+            )
+        }
+
         // Winner Overlay
         engine.winner?.let { winnerName ->
             WinnerOverlay(
@@ -262,7 +282,8 @@ private fun OpponentSection(
     selectedPlayerMonsterSlot: Int?,
     currentPhase: DuelPhase,
     onOpponentMonsterClick: (Int) -> Unit,
-    onInspectCard: (Card) -> Unit
+    onInspectCard: (Card) -> Unit,
+    onOpenGraveyard: () -> Unit
 ) {
     Surface(
         color = Color(0xFF141724),
@@ -297,8 +318,24 @@ private fun OpponentSection(
                     )
                 }
 
-                // Opponent LP Counter
+                // Opponent GY and LP Counter
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = Color(0xFF1E2230),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .clickable { onOpenGraveyard() }
+                            .border(0.5.dp, Color(0xFF475569), RoundedCornerShape(4.dp))
+                    ) {
+                        Text(
+                            text = "GY: ${opponent.graveyard.size}",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "LP",
                         color = MillenniumGold,
@@ -572,7 +609,8 @@ private fun PlayerSection(
     isPlayerTurn: Boolean,
     onMonsterZoneClick: (Int) -> Unit,
     onSpellZoneClick: (Int) -> Unit,
-    onInspectCard: (Card) -> Unit
+    onInspectCard: (Card) -> Unit,
+    onOpenGraveyard: () -> Unit
 ) {
     Surface(
         color = Color(0xFF141724),
@@ -683,8 +721,24 @@ private fun PlayerSection(
                     )
                 }
 
-                // Player LP Counter
+                // Player GY & LP Counter
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = Color(0xFF1E2230),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .clickable { onOpenGraveyard() }
+                            .border(0.5.dp, Color(0xFF475569), RoundedCornerShape(4.dp))
+                    ) {
+                        Text(
+                            text = "GY: ${player.graveyard.size}",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "LP",
                         color = MillenniumGold,
