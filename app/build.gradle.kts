@@ -23,19 +23,17 @@ android {
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
+            val fallbackKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
             if (keystorePath != null && file(keystorePath).exists()) {
                 storeFile = file(keystorePath)
                 storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
                 keyAlias = System.getenv("KEY_ALIAS") ?: "androidreleasekey"
                 keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
-            } else {
-                val fallbackKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
-                if (fallbackKeystore.exists()) {
-                    storeFile = fallbackKeystore
-                    storePassword = "android"
-                    keyAlias = "androiddebugkey"
-                    keyPassword = "android"
-                }
+            } else if (fallbackKeystore.exists()) {
+                storeFile = fallbackKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }
@@ -47,7 +45,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
         }
         debug {
             isDebuggable = true
