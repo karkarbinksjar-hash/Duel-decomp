@@ -1,0 +1,68 @@
+package com.yugioh.recomp.core.engine
+
+import java.util.concurrent.atomic.AtomicLong
+
+enum class CardPosition(val isDefense: Boolean, val isFaceDown: Boolean) {
+    FACE_UP_ATTACK(false, false),
+    FACE_UP_DEFENSE(true, false),
+    FACE_DOWN_DEFENSE(true, true),
+    SET_SPELL_TRAP(false, true),
+    FACE_UP_SPELL_TRAP(false, false)
+}
+
+data class DuelCard(
+    val instanceId: Long = ID_GEN.incrementAndGet(),
+    val card: Card,
+    var position: CardPosition = CardPosition.FACE_UP_ATTACK,
+    var hasAttackedThisTurn: Boolean = false,
+    var canChangePosition: Boolean = true,
+    var turnsOnField: Int = 0
+) {
+    companion object {
+        private val ID_GEN = AtomicLong(1000)
+    }
+}
+
+enum class DuelPhase(val displayName: String, val shortName: String) {
+    DRAW_PHASE("Draw Phase", "DP"),
+    STANDBY_PHASE("Standby Phase", "SP"),
+    MAIN_PHASE_1("Main Phase 1", "M1"),
+    BATTLE_PHASE("Battle Phase", "BP"),
+    MAIN_PHASE_2("Main Phase 2", "M2"),
+    END_PHASE("End Phase", "EP")
+}
+
+data class ClashState(
+    val attackerCard: Card,
+    val defenderCard: Card?,
+    val isDirectAttack: Boolean,
+    val damageDealt: Int,
+    val damageToPlayer: Boolean,
+    val resultSummary: String
+)
+
+class Duelist(
+    val name: String,
+    val isHuman: Boolean,
+    var lifePoints: Int = 8000,
+    val deck: MutableList<Card> = mutableListOf(),
+    val hand: MutableList<DuelCard> = mutableListOf(),
+    val graveyard: MutableList<Card> = mutableListOf(),
+    val monsterZones: Array<DuelCard?> = arrayOfNulls(5),
+    val spellTrapZones: Array<DuelCard?> = arrayOfNulls(5)
+) {
+    fun activeMonstersCount(): Int = monsterZones.count { it != null }
+    fun activeSpellTrapsCount(): Int = spellTrapZones.count { it != null }
+    fun firstEmptyMonsterSlot(): Int = monsterZones.indexOfFirst { it == null }
+    fun firstEmptySpellSlot(): Int = spellTrapZones.indexOfFirst { it == null }
+
+    fun resetTurnActions() {
+        for (monster in monsterZones) {
+            if (monster != null) {
+                monster.hasAttackedThisTurn = false
+                monster.canChangePosition = true
+                monster.turnsOnField++
+            }
+        }
+    }
+}

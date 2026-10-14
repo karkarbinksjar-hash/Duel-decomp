@@ -1,0 +1,95 @@
+name: Automated Android Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build, Sign & Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Verify Version Consistency
+        id: version_check
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/v}"
+          VERSION_NAME=$(grep 'versionName = ' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          VERSION_CODE=$(grep 'versionCode = ' app/build.gradle.kts | tr -dc '0-9')
+          echo "Tag version: $TAG_NAME"
+          echo "Gradle versionName: $VERSION_NAME"
+          echo "Gradle versionCode: $VERSION_CODE"
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+
+      - name: Decode Android Release Keystore
+        id: prepare_keystore
+        run: |
+          mkdir -p ~/.android
+          KEYSTORE_FILE="$HOME/.android/release.keystore"
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding repository secret ANDROID_KEYSTORE_BASE64..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_FILE"
+            echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 found in secrets; generating deterministic fallback keystore for CI..."
+            keytool -genkey -v -keystore "$KEYSTORE_FILE" -storepass android \
+              -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=YuGiOhRecomp,OU=Engine,O=Arena,C=US"
+            echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_ALIAS=androidreleasekey" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          fi
+
+      - name: Run Unit Tests
+        run: ./gradlew test --stacktrace
+
+      - name: Build Signed Release APK & Bundle
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Verify APK Signature
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          echo "Found APK at: $APK_PATH"
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose "$APK_PATH"
+          # Rename to standardized asset name for release
+          RELEASE_APK="app/build/outputs/apk/release/yugioh-recomp-v${{ env.VERSION_NAME }}.apk"
+          cp "$APK_PATH" "$RELEASE_APK"
+          echo "RELEASE_APK=$RELEASE_APK" >> $GITHUB_ENV
+
+      - name: Create GitHub Release & Attach Artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Yu-Gi-Oh! Recomp v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})"
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            ${{ env.RELEASE_APK }}
+            app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Yu-Gi-Oh! Recomp</string>
+    <string name="title_import_rom">Yu-Gi-Oh! ROM Importer</string>
+    <string name="subtitle_import_rom">Dynamic Asset &amp; Engine Pipeline</string>
+    <string name="select_rom_file">Select ROM File (.gbc, .gba, .bin)</string>
+    <string name="verify_checksum">Verify SHA-1 Integrity</string>
+    <string name="status_ready">Waiting for official cartridge ROM…</string>
+</resources>
