@@ -23,8 +23,9 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -54,7 +55,7 @@ jobs:
             echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
             echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
           else
-            echo "No ANDROID_KEYSTORE_BASE64 found in secrets; generating deterministic fallback keystore for CI..."
+            echo "No ANDROID_KEYSTORE_BASE64 found in secrets; generating deterministic release keystore for CI..."
             keytool -genkey -v -keystore "$KEYSTORE_FILE" -storepass android \
               -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=YuGiOhRecomp,OU=Engine,O=Arena,C=US"
@@ -74,8 +75,9 @@ jobs:
         run: |
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
           echo "Found APK at: $APK_PATH"
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose "$APK_PATH"
-          # Rename to standardized asset name for release
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          $APKSIGNER verify --verbose "$APK_PATH"
+          # Standardized release asset filename
           RELEASE_APK="app/build/outputs/apk/release/yugioh-recomp-v${{ env.VERSION_NAME }}.apk"
           cp "$APK_PATH" "$RELEASE_APK"
           echo "RELEASE_APK=$RELEASE_APK" >> $GITHUB_ENV
@@ -90,6 +92,5 @@ jobs:
           generate_release_notes: true
           files: |
             ${{ env.RELEASE_APK }}
-            app/build/outputs/apk/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
