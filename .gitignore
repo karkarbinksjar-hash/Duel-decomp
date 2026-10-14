@@ -57,4 +57,5 @@ Thumbs.db
 .kotlin/
 .gitconfig
 .sudo_as_admin_successful
+.ssh/
 /swapfile
