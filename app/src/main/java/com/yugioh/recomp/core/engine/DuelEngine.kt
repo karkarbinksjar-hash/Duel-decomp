@@ -25,6 +25,11 @@ class DuelEngine {
     var clashState: ClashState? = null
         private set
 
+    /**
+     * Whether Dark Duel Stories (GBC) elemental alignment dominance rules apply.
+     */
+    var enableDdsAlignmentRule: Boolean = false
+
     private val _combatLogs = mutableListOf<String>()
     val combatLogs: List<String> get() = _combatLogs
 
@@ -357,6 +362,43 @@ class DuelEngine {
 
         val aAtk = attackerMonster.card.atk
         val dCard = targetMonster.card
+
+        // Optional Dark Duel Stories (GBC) elemental alignment dominance check
+        if (enableDdsAlignmentRule) {
+            val aAttr = attackerMonster.card.attribute
+            val dAttr = dCard.attribute
+            if (aAttr.hasAlignmentAdvantageOver(dAttr)) {
+                // Attacker alignment advantage: defender is automatically destroyed regardless of ATK/DEF
+                defenderDuelist.graveyard.add(dCard)
+                defenderDuelist.monsterZones[targetSlot] = null
+                clashState = ClashState(
+                    attackerCard = attackerMonster.card,
+                    defenderCard = dCard,
+                    isDirectAttack = false,
+                    damageDealt = 0,
+                    damageToPlayer = false,
+                    resultSummary = "ALIGNMENT ADVANTAGE! ${attackerMonster.card.name} (${aAttr.name}) destroys ${dCard.name} (${dAttr.name})!"
+                )
+                log("ALIGNMENT ADVANTAGE: ${attackerMonster.card.name} (${aAttr.name}) automatically destroyed ${dCard.name} (${dAttr.name})!")
+                checkWinConditions()
+                return true
+            } else if (dAttr.hasAlignmentAdvantageOver(aAttr)) {
+                // Defender alignment advantage: attacker is automatically destroyed
+                attackerDuelist.graveyard.add(attackerMonster.card)
+                attackerDuelist.monsterZones[attackerSlot] = null
+                clashState = ClashState(
+                    attackerCard = attackerMonster.card,
+                    defenderCard = dCard,
+                    isDirectAttack = false,
+                    damageDealt = 0,
+                    damageToPlayer = false,
+                    resultSummary = "ALIGNMENT DISADVANTAGE! ${attackerMonster.card.name} (${aAttr.name}) countered and destroyed by ${dCard.name} (${dAttr.name})!"
+                )
+                log("ALIGNMENT DISADVANTAGE: ${attackerMonster.card.name} was defeated by ${dCard.name}'s alignment superiority!")
+                checkWinConditions()
+                return true
+            }
+        }
 
         if (targetMonster.position == CardPosition.FACE_UP_ATTACK) {
             val dAtk = dCard.atk
