@@ -60,3 +60,7 @@ Thumbs.db
 .ssh/
 /swapfile
 android-sdk/
+
+.github_token
+.git-credentials-stored
+

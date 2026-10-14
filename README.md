@@ -29,24 +29,28 @@ The engine **does not ship with copyrighted game assets or full ROMs**. It is st
 
 2. **Mobile UX & Portrait Architecture**:
    - Strictly locked to **Portrait Mode**.
-   - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, facedown hand cards, animated Life Points bar, and clickable Graveyard counter).
-   - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), clash animations, battle result popups, and real-time combat ticker.
-   - **Bottom Section**: Player playfield, interactive horizontal hand carousel with card elevation, context-sensitive action controls (Summon, Set DEF, Activate Spell, Set Trap, Declare Attack, End Turn), and Graveyard counter.
+   - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, facedown hand cards, animated Life Points bar, floating damage indicators, and clickable Graveyard counter).
+   - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), AI step-by-step announcement overlay, energy attack travel rays, clash impact bursts, phase transition banners, and high-visibility direct attack prompts.
+   - **Bottom Section**: Player playfield, persistent selected-card HUD bar (name, attribute gem, stars, monster type, ATK/DEF scores, and lore quick-view), interactive horizontal hand carousel with visible card titles and stats badges, context-sensitive action controls, and Graveyard counter.
 
-3. **Authentic Dark Duel Stories Rules & Traps**:
+3. **Step-by-Step Opponent Action Sequencer**:
+   - Asynchronous coroutine-driven AI turn sequencer that paces opponent actions at human-readable speeds.
+   - Live announcement banner and audio cues for every AI step: Draw Phase, Spell Activation (with card preview), Trap Sets, Normal Summons, Attack Declarations (with target callouts), and Turn End transitions.
+
+4. **Authentic Dark Duel Stories Rules & Traps**:
    - **DDS Elemental Alignment Dominance Wheel**:
      $$\text{Shadow/Dark} \rightarrow \text{Light} \rightarrow \text{Fiend} \rightarrow \text{Dreams} \rightarrow \text{Pyro} \rightarrow \text{Forest} \rightarrow \text{Wind} \rightarrow \text{Earth} \rightarrow \text{Thunder} \rightarrow \text{Aqua} \rightarrow \text{Pyro}$$
      Monsters with an elemental advantage automatically overcome raw ATK/DEF statistics.
    - **Counter Traps**: Implemented *Mirror Force* (destroys attacking monsters on declaration) and *Trap Hole* (destroys monsters with $\ge 1000$ ATK upon summon).
    - **Card Passcodes**: `CardPasscodeRegistry` supporting canonical 8-digit DDS passcodes.
 
-4. **Game Boy APU Chiptune Synthesizer**:
+5. **Game Boy APU Chiptune Synthesizer**:
    - Pure Kotlin sound generator recreating the 4 Game Boy sound channels:
      - Pulse 1 & Pulse 2 (variable duty cycles and pitch sweeps)
      - Channel 4 LFSR pseudo-random noise generator
    - Authentic chiptune audio synthesized for card draws, monster summons, attack clashes, and victory fanfares.
 
-5. **CI/CD & Release Automation**:
+6. **CI/CD & Release Automation**:
    - Full Gradle Version Catalog (`gradle/libs.versions.toml`).
    - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running `./gradlew test` and `./gradlew assembleRelease` on every Pull Request and push to `main`.
    - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building and signing APK binaries with Android SDK `apksigner`.

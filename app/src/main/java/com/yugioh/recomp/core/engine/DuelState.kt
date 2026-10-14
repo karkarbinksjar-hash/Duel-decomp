@@ -41,6 +41,50 @@ data class ClashState(
     val resultSummary: String
 )
 
+sealed class AiTurnStep {
+    data class PhaseTransition(
+        val phase: DuelPhase,
+        val announcement: String
+    ) : AiTurnStep()
+
+    data class Draw(
+        val card: Card?,
+        val announcement: String
+    ) : AiTurnStep()
+
+    data class ActivateSpell(
+        val card: Card,
+        val announcement: String
+    ) : AiTurnStep()
+
+    data class SetTrap(
+        val card: Card,
+        val slotIndex: Int,
+        val announcement: String
+    ) : AiTurnStep()
+
+    data class SummonMonster(
+        val card: Card,
+        val slotIndex: Int,
+        val isDefense: Boolean,
+        val announcement: String
+    ) : AiTurnStep()
+
+    data class DeclareAttack(
+        val attackerSlot: Int,
+        val attackerCard: Card,
+        val defenderSlot: Int?, // null = direct attack
+        val defenderCard: Card?,
+        val predictedDamage: Int,
+        val isDirect: Boolean,
+        val announcement: String
+    ) : AiTurnStep()
+
+    data class EndTurn(
+        val announcement: String
+    ) : AiTurnStep()
+}
+
 class Duelist(
     val name: String,
     val isHuman: Boolean,

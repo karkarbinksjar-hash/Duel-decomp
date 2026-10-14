@@ -23,7 +23,10 @@ class DuelEngine {
         private set
 
     var clashState: ClashState? = null
-        private set
+
+    fun dismissClash() {
+        clashState = null
+    }
 
     /**
      * Whether Dark Duel Stories (GBC) elemental alignment dominance rules apply.
@@ -566,8 +569,10 @@ class DuelEngine {
 
     /**
      * Ends the current turn and passes initiative to the opponent or player.
+     * When [autoRunAi] is false, caller is responsible for executing planned AI steps
+     * via [planAiTurnSteps] and [executeAiStep].
      */
-    fun endTurn() {
+    fun passTurn(autoRunAi: Boolean = true) {
         val currentDuelist = if (isPlayerTurn) player else opponent
         currentDuelist.resetTurnActions()
 
@@ -582,72 +587,97 @@ class DuelEngine {
 
         log("--- Turn $turnNumber: ${nextDuelist.name}'s Turn ---")
         currentPhase = DuelPhase.DRAW_PHASE
-        drawCard(isPlayerTurn)
-        currentPhase = DuelPhase.MAIN_PHASE_1
 
-        if (!isPlayerTurn && winner == null) {
-            runAiTurn()
+        if (autoRunAi) {
+            drawCard(isPlayerTurn)
+            currentPhase = DuelPhase.MAIN_PHASE_1
+            if (!isPlayerTurn && winner == null) {
+                runAiTurn()
+            }
         }
     }
 
+    fun endTurn() {
+        passTurn(autoRunAi = true)
+    }
+
     /**
-     * Executes AI opponent turn with competitive heuristics.
+     * Plans the strategic step-by-step sequence of actions for the AI opponent,
+     * suitable for human-paced animations, announcements, and UI updates.
      */
-    fun runAiTurn() {
-        if (isPlayerTurn || winner != null) return
+    fun planAiTurnSteps(): List<AiTurnStep> {
+        val steps = mutableListOf<AiTurnStep>()
+        if (isPlayerTurn || winner != null) return steps
 
-        // 1. Check Spells in hand
-        val spells = opponent.hand.mapIndexed { idx, dc -> Pair(idx, dc) }
-            .filter { it.second.card.isSpell }
-        for ((_, spell) in spells) {
-            if (spell.card.name == "Pot of Greed" || spell.card.name == "Raigeki" || spell.card.name == "Dian Keto the Cure Maiden" || spell.card.name == "Sparks") {
-                activateSpell(isPlayer = false, handIndex = opponent.hand.indexOf(spell))
+        // 1. Draw Phase
+        steps.add(AiTurnStep.PhaseTransition(DuelPhase.DRAW_PHASE, "${opponent.name}'s Turn - Draw Phase"))
+        val nextDrawCard = opponent.deck.firstOrNull()
+        steps.add(AiTurnStep.Draw(nextDrawCard, "${opponent.name} draws a card."))
+
+        // 2. Main Phase 1
+        steps.add(AiTurnStep.PhaseTransition(DuelPhase.MAIN_PHASE_1, "${opponent.name} enters Main Phase 1"))
+
+        // Spells
+        val playableSpells = opponent.hand.filter { it.card.isSpell }
+        for (dc in playableSpells) {
+            val c = dc.card
+            if (c.name in listOf("Pot of Greed", "Raigeki", "Dark Hole", "Dian Keto the Cure Maiden", "Sparks")) {
+                steps.add(AiTurnStep.ActivateSpell(c, "${opponent.name} activates Spell: [${c.name}]!"))
                 break
             }
         }
 
-        // 2. Set Traps into Backrow
-        val traps = opponent.hand.mapIndexed { idx, dc -> Pair(idx, dc) }
-            .filter { it.second.card.isTrap }
-        for ((_, trap) in traps) {
-            val emptySlot = opponent.firstEmptySpellSlot()
-            if (emptySlot != -1) {
-                val hIdx = opponent.hand.indexOf(trap)
-                if (hIdx != -1) {
-                    setSpellTrap(isPlayer = false, handIndex = hIdx, slotIndex = emptySlot)
-                    break
-                }
+        // Traps
+        val emptySpellSlot = opponent.firstEmptySpellSlot()
+        if (emptySpellSlot != -1) {
+            val trap = opponent.hand.firstOrNull { it.card.isTrap }
+            if (trap != null) {
+                steps.add(AiTurnStep.SetTrap(trap.card, emptySpellSlot, "${opponent.name} sets 1 card facedown in Spell/Trap Zone."))
             }
         }
 
-        // 3. Summon best available monster
-        val monsterOptions = opponent.hand.mapIndexed { idx, dc -> Pair(idx, dc) }
-            .filter { it.second.card.isMonster }
-            .sortedByDescending { it.second.card.atk }
+        // Monsters to Summon
+        val summonableMonster = opponent.hand
+            .filter { it.card.isMonster }
+            .sortedByDescending { it.card.atk }
+            .firstOrNull { canSummon(isPlayer = false, it.card).first }
 
-        for ((_, mCard) in monsterOptions) {
-            val hIdx = opponent.hand.indexOf(mCard)
-            if (hIdx == -1) continue
-            val (can, _) = canSummon(isPlayer = false, mCard.card)
-            if (can) {
-                summonMonster(isPlayer = false, handIndex = hIdx, slotIndex = opponent.firstEmptyMonsterSlot())
-                break
-            }
+        val emptyMonsterSlot = opponent.firstEmptyMonsterSlot()
+        if (summonableMonster != null && emptyMonsterSlot != -1) {
+            val c = summonableMonster.card
+            steps.add(
+                AiTurnStep.SummonMonster(
+                    c,
+                    emptyMonsterSlot,
+                    isDefense = false,
+                    "${opponent.name} Normal Summons [${c.name}] (ATK ${c.atk})!"
+                )
+            )
         }
 
-        // 3. Move to Battle Phase
-        currentPhase = DuelPhase.BATTLE_PHASE
+        // 3. Battle Phase
+        steps.add(AiTurnStep.PhaseTransition(DuelPhase.BATTLE_PHASE, "${opponent.name} enters Battle Phase!"))
 
+        // Attacks
         for (slot in 0 until 5) {
             val aiMonster = opponent.monsterZones[slot] ?: continue
             if (aiMonster.position != CardPosition.FACE_UP_ATTACK || aiMonster.hasAttackedThisTurn) continue
 
             if (player.activeMonstersCount() == 0) {
-                // Direct attack!
-                declareAttack(slot, null)
-                if (winner != null) return
+                // Direct Attack!
+                steps.add(
+                    AiTurnStep.DeclareAttack(
+                        attackerSlot = slot,
+                        attackerCard = aiMonster.card,
+                        defenderSlot = null,
+                        defenderCard = null,
+                        predictedDamage = aiMonster.card.atk,
+                        isDirect = true,
+                        announcement = "⚔ DIRECT ATTACK! ${aiMonster.card.name} strikes directly for ${aiMonster.card.atk} damage!"
+                    )
+                )
             } else {
-                // Find a player monster we can defeat
+                // Monster attack
                 var bestTarget: Int? = null
                 var maxDmg = -1
 
@@ -664,15 +694,93 @@ class DuelEngine {
                 }
 
                 if (bestTarget != null) {
-                    declareAttack(slot, bestTarget)
-                    if (winner != null) return
+                    val defenderCard = player.monsterZones[bestTarget]?.card
+                    steps.add(
+                        AiTurnStep.DeclareAttack(
+                            attackerSlot = slot,
+                            attackerCard = aiMonster.card,
+                            defenderSlot = bestTarget,
+                            defenderCard = defenderCard,
+                            predictedDamage = maxDmg,
+                            isDirect = false,
+                            announcement = "⚔ [${aiMonster.card.name}] (ATK ${aiMonster.card.atk}) attacks your [${defenderCard?.name ?: "Monster"}]!"
+                        )
+                    )
                 }
             }
         }
 
         // 4. End Turn
-        currentPhase = DuelPhase.END_PHASE
-        endTurn()
+        steps.add(AiTurnStep.EndTurn("${opponent.name} ends turn. It is now your turn!"))
+        return steps
+    }
+
+    /**
+     * Executes a single planned AI step on the state machine.
+     */
+    fun executeAiStep(step: AiTurnStep): Boolean {
+        if (winner != null) return false
+
+        when (step) {
+            is AiTurnStep.PhaseTransition -> {
+                currentPhase = step.phase
+                log("Phase: ${currentPhase.displayName}")
+                return true
+            }
+            is AiTurnStep.Draw -> {
+                return drawCard(isPlayer = false) != null
+            }
+            is AiTurnStep.ActivateSpell -> {
+                val idx = opponent.hand.indexOfFirst { it.card.id == step.card.id || it.card.name == step.card.name }
+                if (idx != -1) {
+                    return activateSpell(isPlayer = false, handIndex = idx)
+                }
+                return false
+            }
+            is AiTurnStep.SetTrap -> {
+                val idx = opponent.hand.indexOfFirst { it.card.id == step.card.id || it.card.name == step.card.name }
+                if (idx != -1) {
+                    return setSpellTrap(isPlayer = false, handIndex = idx, slotIndex = step.slotIndex)
+                }
+                return false
+            }
+            is AiTurnStep.SummonMonster -> {
+                val idx = opponent.hand.indexOfFirst { it.card.id == step.card.id || it.card.name == step.card.name }
+                if (idx != -1) {
+                    val targetSlot = if (opponent.monsterZones[step.slotIndex] == null) step.slotIndex else opponent.firstEmptyMonsterSlot()
+                    return summonMonster(isPlayer = false, handIndex = idx, slotIndex = targetSlot, setDefense = step.isDefense)
+                }
+                return false
+            }
+            is AiTurnStep.DeclareAttack -> {
+                currentPhase = DuelPhase.BATTLE_PHASE
+                return declareAttack(attackerSlot = step.attackerSlot, targetSlot = step.defenderSlot)
+            }
+            is AiTurnStep.EndTurn -> {
+                opponent.resetTurnActions()
+                isPlayerTurn = true
+                hasNormalSummonedThisTurn = false
+                clashState = null
+                turnNumber++
+                log("--- Turn $turnNumber: ${player.name}'s Turn ---")
+                currentPhase = DuelPhase.DRAW_PHASE
+                drawCard(isPlayer = true)
+                currentPhase = DuelPhase.MAIN_PHASE_1
+                return true
+            }
+        }
+    }
+
+    /**
+     * Executes AI opponent turn with competitive heuristics (headless/synchronous mode).
+     */
+    fun runAiTurn() {
+        if (isPlayerTurn || winner != null) return
+        val steps = planAiTurnSteps()
+        for (step in steps) {
+            executeAiStep(step)
+            if (winner != null) break
+        }
     }
 
     private fun checkWinConditions() {

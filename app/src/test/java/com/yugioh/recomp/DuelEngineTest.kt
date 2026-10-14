@@ -237,4 +237,23 @@ class DuelEngineTest {
         assertEquals(2, engine.player.graveyard.size)
         assertEquals(1, engine.opponent.graveyard.size)
     }
+
+    @Test
+    fun testAiTurnStepPlanningAndExecution() {
+        // Pass turn to opponent without auto-running AI
+        engine.passTurn(autoRunAi = false)
+        assertFalse(engine.isPlayerTurn)
+
+        val steps = engine.planAiTurnSteps()
+        assertTrue("AI should plan at least one step", steps.isNotEmpty())
+
+        for (step in steps) {
+            val executed = engine.executeAiStep(step)
+            assertTrue("Step execution should succeed or be valid", executed || engine.winner != null)
+        }
+
+        // Turn should have ended and passed back to player
+        assertTrue("After running all steps, initiative must return to player", engine.isPlayerTurn)
+        assertEquals(DuelPhase.MAIN_PHASE_1, engine.currentPhase)
+    }
 }

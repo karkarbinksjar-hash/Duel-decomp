@@ -35,7 +35,12 @@ object CardArtRenderer {
      * Renders a complete Yu-Gi-Oh! card texture including border, name header,
      * attribute orb, star row, framed illustration window, text lore box, and ATK/DEF scores.
      */
-    fun renderFullCard(card: Card, width: Int = 128, height: Int = 186): IntArray {
+    fun renderFullCard(
+        card: Card,
+        width: Int = 128,
+        height: Int = 186,
+        artPixelsOverride: IntArray? = null
+    ): IntArray {
         val pixels = IntArray(width * height)
 
         val frameColor = when {
@@ -113,12 +118,12 @@ object CardArtRenderer {
         drawRectBorder(pixels, width, artLeft - 2, artTop - 2, artWidth + 4, artHeight + 4, 0xFF785B28.toInt())
 
         // Render Card Illustration into Art Window
-        val artPixels = renderCardArtwork(card, artWidth, artHeight)
+        val artPixels = artPixelsOverride ?: renderCardArtwork(card, artWidth, artHeight)
         for (ay in 0 until artHeight) {
             for (ax in 0 until artWidth) {
                 val px = artLeft + ax
                 val py = artTop + ay
-                if (px in 0 until width && py in 0 until height) {
+                if (px in 0 until width && py in 0 until height && ay * artWidth + ax < artPixels.size) {
                     pixels[py * width + px] = artPixels[ay * artWidth + ax]
                 }
             }
