@@ -16,7 +16,28 @@ enum class CardAttribute(val displayName: String, val colorHex: Long) {
     DREAMS("DREAMS", 0xFFEC4899),
     DIVINE("DIVINE", 0xFFFACC15),
     SPELL("SPELL", 0xFF0D9488),
-    TRAP("TRAP", 0xFFBE185D)
+    TRAP("TRAP", 0xFFBE185D);
+
+    /**
+     * Dark Duel Stories (GBC) elemental alignment dominance wheel.
+     * When a monster with an alignment advantage battles a disadvantaged monster,
+     * the disadvantaged monster is instantly destroyed regardless of ATK/DEF.
+     */
+    fun hasAlignmentAdvantageOver(other: CardAttribute): Boolean {
+        return when (this) {
+            DARK -> other == LIGHT
+            LIGHT -> other == FIEND
+            FIEND -> other == DREAMS
+            DREAMS -> other == FIRE
+            FIRE -> other == FOREST
+            FOREST -> other == WIND
+            WIND -> other == EARTH
+            EARTH -> other == THUNDER
+            THUNDER -> other == WATER
+            WATER -> other == FIRE
+            else -> false
+        }
+    }
 }
 
 enum class CardType(val displayName: String) {

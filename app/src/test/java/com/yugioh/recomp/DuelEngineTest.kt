@@ -148,4 +148,42 @@ class DuelEngineTest {
         engine.activateSpell(isPlayer = true, handIndex = 0)
         assertEquals(lpBefore + 1000, engine.player.lifePoints)
     }
+
+    @Test
+    fun testDdsAlignmentDominance() {
+        engine.enableDdsAlignmentRule = true
+
+        // Advance to Battle Phase
+        while (engine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            engine.nextPhase()
+        }
+
+        // Setup: Dark attribute attacker (e.g. 500 ATK) vs Light attribute defender (e.g. 3000 ATK Blue-Eyes)
+        val darkAttacker = Card(id = 10, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val lightDefender = Card(id = 1, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
+
+        engine.player.monsterZones[0] = DuelCard(card = darkAttacker, position = CardPosition.FACE_UP_ATTACK)
+        engine.opponent.monsterZones[0] = DuelCard(card = lightDefender, position = CardPosition.FACE_UP_ATTACK)
+
+        // Dark has alignment advantage over Light in Dark Duel Stories rules
+        assertTrue(CardAttribute.DARK.hasAlignmentAdvantageOver(CardAttribute.LIGHT))
+        assertFalse(CardAttribute.LIGHT.hasAlignmentAdvantageOver(CardAttribute.DARK))
+
+        val attacked = engine.declareAttack(attackerSlot = 0, targetSlot = 0)
+        assertTrue(attacked)
+        // Opponent's Blue-Eyes must be destroyed despite having 3000 ATK vs 300 ATK!
+        assertNull(engine.opponent.monsterZones[0])
+        assertNotNull(engine.player.monsterZones[0])
+        assertEquals(1, engine.opponent.graveyard.size)
+    }
+
+    @Test
+    fun testCardPasscodeRegistry() {
+        assertTrue(CardPasscodeRegistry.isValidPasscode("89631139"))
+        assertEquals("Blue-Eyes White Dragon", CardPasscodeRegistry.findCardNameByPasscode("89631139"))
+        assertEquals("Dark Magician", CardPasscodeRegistry.findCardNameByPasscode("46986414"))
+        assertEquals("Pot of Greed", CardPasscodeRegistry.findCardNameByPasscode("55144522"))
+        assertFalse(CardPasscodeRegistry.isValidPasscode("00000000"))
+        assertNull(CardPasscodeRegistry.findCardNameByPasscode("00000000"))
+    }
 }
