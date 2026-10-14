@@ -186,4 +186,55 @@ class DuelEngineTest {
         assertFalse(CardPasscodeRegistry.isValidPasscode("00000000"))
         assertNull(CardPasscodeRegistry.findCardNameByPasscode("00000000"))
     }
+
+    @Test
+    fun testTrapHoleTrigger() {
+        // Opponent has a set Trap Hole
+        val trapHole = Card(id = 201, name = "Trap Hole", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP)
+        engine.opponent.spellTrapZones[0] = DuelCard(card = trapHole, position = CardPosition.SET_SPELL_TRAP)
+
+        // Player normal summons a monster with ATK >= 1000 in attack position
+        val celticGuardian = Card(id = 24, name = "Celtic Guardian", atk = 1400, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
+        engine.player.hand.add(0, DuelCard(card = celticGuardian))
+
+        val summoned = engine.summonMonster(isPlayer = true, handIndex = 0, slotIndex = 0, setDefense = false)
+        assertTrue(summoned)
+
+        // Trap Hole should trigger, sending Celtic Guardian to player's GY and Trap Hole to opponent's GY
+        assertNull(engine.player.monsterZones[0])
+        assertNull(engine.opponent.spellTrapZones[0])
+        assertEquals(1, engine.player.graveyard.size)
+        assertEquals("Celtic Guardian", engine.player.graveyard[0].name)
+        assertEquals(1, engine.opponent.graveyard.size)
+        assertEquals("Trap Hole", engine.opponent.graveyard[0].name)
+    }
+
+    @Test
+    fun testMirrorForceTrigger() {
+        // Opponent has a set Mirror Force
+        val mirrorForce = Card(id = 200, name = "Mirror Force", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP)
+        engine.opponent.spellTrapZones[0] = DuelCard(card = mirrorForce, position = CardPosition.SET_SPELL_TRAP)
+
+        // Player controls 2 attack position monsters
+        val mon1 = Card(id = 24, name = "Celtic Guardian", atk = 1400, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
+        val mon2 = Card(id = 14, name = "Dark Magician", atk = 2500, def = 2100, level = 7, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        engine.player.monsterZones[0] = DuelCard(card = mon1, position = CardPosition.FACE_UP_ATTACK)
+        engine.player.monsterZones[1] = DuelCard(card = mon2, position = CardPosition.FACE_UP_ATTACK)
+
+        // Advance to Battle Phase
+        while (engine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            engine.nextPhase()
+        }
+
+        // Declare attack with monster 0
+        val attacked = engine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue(attacked)
+
+        // Mirror Force should trigger and destroy all attack position monsters on player's field!
+        assertNull(engine.player.monsterZones[0])
+        assertNull(engine.player.monsterZones[1])
+        assertNull(engine.opponent.spellTrapZones[0])
+        assertEquals(2, engine.player.graveyard.size)
+        assertEquals(1, engine.opponent.graveyard.size)
+    }
 }

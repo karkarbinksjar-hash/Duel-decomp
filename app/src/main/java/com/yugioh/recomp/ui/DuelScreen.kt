@@ -328,7 +328,37 @@ private fun OpponentSection(
                 trackColor = Color(0xFF2D3248)
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            // Opponent Hand Cards Row (Facedown Card Backs)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val cardBack = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
+                repeat(opponent.hand.size) {
+                    Image(
+                        bitmap = cardBack,
+                        contentDescription = "Opponent Hand Card",
+                        modifier = Modifier
+                            .width(18.dp)
+                            .height(26.dp)
+                            .padding(horizontal = 1.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .border(0.5.dp, Color(0xFF475569), RoundedCornerShape(2.dp))
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "(${opponent.hand.size})",
+                    color = Color.Gray,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
 
             // Opponent Spell/Trap Zones (Row 1)
             Row(
@@ -888,15 +918,15 @@ private fun ZoneSlot(
     }
 
     val backgroundColor = when {
-        duelCard != null -> Color(0xFF1E2433)
-        isSpellTrap -> Color(0xFF0F172A)
-        else -> ZoneFillGreen
+        duelCard != null -> Color(0xFF131722)
+        isSpellTrap -> Color(0xFF0C101A)
+        else -> Color(0xFF0F1A15)
     }
 
     Box(
         modifier = Modifier
-            .width(58.dp)
-            .height(52.dp)
+            .width(62.dp)
+            .height(58.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(backgroundColor)
             .border(
@@ -913,62 +943,109 @@ private fun ZoneSlot(
         if (duelCard != null) {
             val card = duelCard.card
             if (duelCard.position.isFaceDown && isOpponent) {
-                // Facedown card back
-                Text("🂠", fontSize = 24.sp, color = MillenniumGold)
-            } else if (duelCard.position.isDefense) {
-                // Defense Mode (Horizontal)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(2.dp)
+                // Facedown Opponent Card Back
+                val cardBackBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(2.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = card.name,
-                        color = Color.White,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    Image(
+                        bitmap = cardBackBitmap,
+                        contentDescription = "Facedown Card",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(3.dp))
+                            .then(if (duelCard.position.isDefense) Modifier.rotate(90f) else Modifier)
                     )
-                    Text(
-                        text = "DEF ${card.def}",
-                        color = DefenseBlue,
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
+                    if (duelCard.position.isDefense) {
+                        Surface(
+                            color = Color(0xCC000000),
+                            shape = RoundedCornerShape(2.dp),
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                        ) {
+                            Text(
+                                text = "DEF",
+                                color = DefenseBlue,
+                                fontSize = 7.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            )
+                        }
+                    }
+                }
+            } else if (duelCard.position.isDefense) {
+                // Defense Mode (Horizontal/Rotated Faceup or Player Facedown)
+                val cardBitmap = if (duelCard.position.isFaceDown) {
+                    BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
+                } else {
+                    BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+                }
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = cardBitmap,
+                        contentDescription = card.name,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(3.dp))
+                            .rotate(90f)
                     )
+                    Surface(
+                        color = Color(0xDD0F172A),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    ) {
+                        Text(
+                            text = if (duelCard.position.isFaceDown) "SET DEF" else "DEF ${card.def}",
+                            color = DefenseBlue,
+                            fontSize = 7.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
                 }
             } else {
-                // Attack Mode / Faceup Spell
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(2.dp)
+                // Attack Mode / Faceup Spell or Trap
+                val cardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(2.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = card.name,
-                        color = if (card.isSpell) Color(0xFF2DD4BF) else if (card.isTrap) Color(0xFFF472B6) else Color.White,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    Image(
+                        bitmap = cardBitmap,
+                        contentDescription = card.name,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(3.dp))
                     )
-                    if (card.isMonster) {
+                    Surface(
+                        color = Color(0xDD0F172A),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    ) {
                         Text(
-                            text = "ATK ${card.atk}",
-                            color = AttackRed,
-                            fontSize = 8.sp,
+                            text = if (card.isMonster) "ATK ${card.atk}" else card.cardType.displayName.uppercase(),
+                            color = if (card.isMonster) AttackRed else if (card.isSpell) Color(0xFF2DD4BF) else Color(0xFFF472B6),
+                            fontSize = 7.sp,
                             fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 2.dp)
                         )
                     }
                 }
             }
         } else {
-            Text(
-                text = if (isSpellTrap) "S/T" else "M",
-                color = Color(0xFF334155),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = if (isSpellTrap) "S/T" else "M",
+                    color = Color(0xFF475569),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
         }
     }
 }
@@ -979,61 +1056,64 @@ private fun HandCardItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val sprite = RomAssetCache.getCardSprite(card.id)
-    val imageBitmap = BitmapUtils.spriteToImageBitmap(sprite)
+    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
 
     Surface(
-        color = Color(0xFF1E2130),
+        color = Color(0xFF141724),
         shape = RoundedCornerShape(6.dp),
         modifier = Modifier
-            .width(68.dp)
+            .width(66.dp)
             .fillMaxHeight()
-            .offset(y = if (isSelected) (-6).dp else 0.dp)
+            .offset(y = if (isSelected) (-8).dp else 0.dp)
             .border(
-                width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) MillenniumGold else Color(0xFF334155),
+                width = if (isSelected) 2.5.dp else 1.dp,
+                color = if (isSelected) MillenniumGold else Color(0xFF2B3245),
                 shape = RoundedCornerShape(6.dp)
             )
             .clickable { onClick() }
     ) {
-        Column(
-            modifier = Modifier.padding(3.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = card.name,
-                color = Color.White,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
             Image(
-                bitmap = imageBitmap,
+                bitmap = fullCardBitmap,
                 contentDescription = card.name,
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Color.Black)
+                    .fillMaxSize()
+                    .padding(2.dp)
+                    .clip(RoundedCornerShape(4.dp))
             )
 
-            if (card.isMonster) {
-                Text(
-                    text = "${card.atk}/${card.def}",
-                    color = MillenniumGold,
-                    fontSize = 7.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-            } else {
-                Text(
-                    text = card.cardType.displayName,
-                    color = Color(card.attribute.colorHex),
-                    fontSize = 7.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            // Sleek ATK/DEF score badge at bottom of hand card
+            Surface(
+                color = Color(0xEE0B0E17),
+                shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 2.dp, vertical = 2.dp)
+            ) {
+                if (card.isMonster) {
+                    Text(
+                        text = "${card.atk}/${card.def}",
+                        color = MillenniumGold,
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                } else {
+                    Text(
+                        text = card.cardType.displayName,
+                        color = Color(card.attribute.colorHex),
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }
@@ -1041,22 +1121,26 @@ private fun HandCardItem(
 
 @Composable
 private fun MiniCardPreview(card: Card) {
-    val sprite = RomAssetCache.getCardSprite(card.id)
-    val imageBitmap = BitmapUtils.spriteToImageBitmap(sprite)
+    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Image(
-            bitmap = imageBitmap,
+            bitmap = fullCardBitmap,
             contentDescription = card.name,
             modifier = Modifier
-                .size(28.dp)
+                .width(26.dp)
+                .height(38.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .border(1.dp, Color.Gray, RoundedCornerShape(3.dp))
+                .border(1.dp, MillenniumGold, RoundedCornerShape(3.dp))
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Column {
-            Text(card.name, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text("ATK ${card.atk}", color = AttackRed, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+            Text(card.name, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            if (card.isMonster) {
+                Text("ATK ${card.atk} / DEF ${card.def}", color = AttackRed, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+            } else {
+                Text(card.cardType.displayName, color = Color(card.attribute.colorHex), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

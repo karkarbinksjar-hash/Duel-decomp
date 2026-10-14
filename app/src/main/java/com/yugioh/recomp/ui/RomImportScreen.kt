@@ -127,13 +127,13 @@ fun RomImportScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = "Yu-Gi-Oh! Recomp",
-            color = MillenniumGold,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 1.sp
-        )
+            Text(
+                text = "Duel-decomp",
+                color = MillenniumGold,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.sp
+            )
 
         Text(
             text = "Dynamic Asset & Native Card Engine",
@@ -170,6 +170,33 @@ fun RomImportScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
+        // Direct Quick Play Entry
+        Button(
+            onClick = {
+                if (!RomAssetCache.isAssetPipelineReady) {
+                    RomAssetCache.populateWithCanonicalDatabase()
+                }
+                onDuelReady()
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+        ) {
+            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "INSTANT DUEL (PLAY NOW)",
+                color = Color.Black,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+                letterSpacing = 1.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         // Action Buttons: File Picker & Verified Sample
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -191,11 +218,11 @@ fun RomImportScreen(
                     val synthBytes = RomValidator.createSyntheticDdsRom()
                     processRomBytes(synthBytes, "Yu-Gi-Oh! Dark Duel Stories (USA) [Synthetic].gbc")
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Load Verified DDS", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Load Verified DDS", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 

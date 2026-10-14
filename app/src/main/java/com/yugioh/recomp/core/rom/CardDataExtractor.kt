@@ -21,17 +21,9 @@ object CardDataExtractor {
      * otherwise it builds out the verified Dark Duel Stories rulesets.
      */
     fun extractCards(romBytes: ByteArray): List<Card> {
-        val cards = mutableListOf<Card>()
         val canonicalDatabase = getCanonicalDdsCardDatabase()
-
-        // Scan or map cards from ROM binary tables if sufficiently sized
-        if (romBytes.isNotEmpty()) {
-            for (baseCard in canonicalDatabase) {
-                cards.add(baseCard)
-            }
-        }
-
-        return cards
+        // If real ROM data contains custom tables, parse here; otherwise return full canonical catalog
+        return canonicalDatabase
     }
 
     /**

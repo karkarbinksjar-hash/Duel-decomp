@@ -85,7 +85,7 @@ jobs:
       - name: Create GitHub Release & Attach Artifact
         uses: softprops/action-gh-release@v2
         with:
-          name: "Yu-Gi-Oh! Recomp v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})"
+          name: "Duel-decomp v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})"
           tag_name: ${{ github.ref_name }}
           draft: false
           prerelease: false

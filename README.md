@@ -1,4 +1,4 @@
-# Yu-Gi-Oh! Recomp (Native Android Engine)
+# Duel-decomp (Native Android Engine)
 
 A native Android, portrait-oriented Yu-Gi-Oh! card game engine inspired by the architecture of [`bryanthaboi/gen1recomp`](https://github.com/bryanthaboi/gen1recomp).
 

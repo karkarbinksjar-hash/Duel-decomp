@@ -187,6 +187,25 @@ class DuelEngine {
         duelist.monsterZones[targetSlot] = duelCard
         hasNormalSummonedThisTurn = true
 
+        // Trap Trigger: Trap Hole (if Normal Summoned in Attack with ATK >= 1000)
+        val opposingDuelist = if (isPlayer) opponent else player
+        if (!setDefense && card.atk >= 1000) {
+            val trapSlot = (0 until 5).firstOrNull { slot ->
+                val trap = opposingDuelist.spellTrapZones[slot]
+                trap != null && trap.position.isFaceDown && trap.card.name == "Trap Hole"
+            }
+            if (trapSlot != null) {
+                val trapCard = opposingDuelist.spellTrapZones[trapSlot]!!.card
+                opposingDuelist.spellTrapZones[trapSlot] = null
+                opposingDuelist.graveyard.add(trapCard)
+                // Destroy summoned monster
+                duelist.monsterZones[targetSlot] = null
+                duelist.graveyard.add(card)
+                log("${opposingDuelist.name} triggered Trap: [Trap Hole]! ${card.name} fell into the pit and was destroyed!")
+                return true
+            }
+        }
+
         if (setDefense) {
             log("${duelist.name} Set a monster in face-down defense position.")
         } else {
@@ -328,6 +347,39 @@ class DuelEngine {
         if (attackerMonster.hasAttackedThisTurn) {
             log("${attackerMonster.card.name} has already declared an attack this turn")
             return false
+        }
+
+        // Trap Trigger on Attack Declaration: Mirror Force
+        val mirrorForceSlot = (0 until 5).firstOrNull { slot ->
+            val trap = defenderDuelist.spellTrapZones[slot]
+            trap != null && trap.position.isFaceDown && trap.card.name == "Mirror Force"
+        }
+        if (mirrorForceSlot != null) {
+            val trapCard = defenderDuelist.spellTrapZones[mirrorForceSlot]!!.card
+            defenderDuelist.spellTrapZones[mirrorForceSlot] = null
+            defenderDuelist.graveyard.add(trapCard)
+            log("${defenderDuelist.name} triggered Trap: [Mirror Force]!")
+
+            var destroyedCount = 0
+            for (i in 0 until 5) {
+                val m = attackerDuelist.monsterZones[i]
+                if (m != null && m.position == CardPosition.FACE_UP_ATTACK) {
+                    attackerDuelist.graveyard.add(m.card)
+                    attackerDuelist.monsterZones[i] = null
+                    destroyedCount++
+                }
+            }
+            clashState = ClashState(
+                attackerCard = attackerMonster.card,
+                defenderCard = trapCard,
+                isDirectAttack = false,
+                damageDealt = 0,
+                damageToPlayer = false,
+                resultSummary = "TRAP: Mirror Force destroyed $destroyedCount monster(s)!"
+            )
+            log("Mirror Force destroyed $destroyedCount attacking monster(s) on ${attackerDuelist.name}'s field!")
+            checkWinConditions()
+            return true
         }
 
         // Direct attack check
@@ -554,7 +606,21 @@ class DuelEngine {
             }
         }
 
-        // 2. Summon best available monster
+        // 2. Set Traps into Backrow
+        val traps = opponent.hand.mapIndexed { idx, dc -> Pair(idx, dc) }
+            .filter { it.second.card.isTrap }
+        for ((_, trap) in traps) {
+            val emptySlot = opponent.firstEmptySpellSlot()
+            if (emptySlot != -1) {
+                val hIdx = opponent.hand.indexOf(trap)
+                if (hIdx != -1) {
+                    setSpellTrap(isPlayer = false, handIndex = hIdx, slotIndex = emptySlot)
+                    break
+                }
+            }
+        }
+
+        // 3. Summon best available monster
         val monsterOptions = opponent.hand.mapIndexed { idx, dc -> Pair(idx, dc) }
             .filter { it.second.card.isMonster }
             .sortedByDescending { it.second.card.atk }
