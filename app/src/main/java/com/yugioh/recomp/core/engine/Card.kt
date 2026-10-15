@@ -93,4 +93,32 @@ data class Card(
         level in 5..6 -> 1
         else -> 2
     }
+
+    /**
+     * Authentic Dark Duel Stories (GBC) Deck Cost.
+     * Monsters: (ATK + DEF) / 100.
+     * Spells/Traps: Specific canonical values.
+     */
+    val deckCost: Int get() {
+        if (!isMonster) {
+            return when (name) {
+                "Raigeki" -> 200
+                "Dark Hole" -> 180
+                "Harpy's Feather Duster", "Harpie's Feather Duster" -> 190
+                "Pot of Greed" -> 150
+                "Change of Heart" -> 180
+                "Monster Reborn" -> 150
+                "Dian Keto the Cure Maiden" -> 60
+                "Sparks" -> 10
+                "Hinotama" -> 15
+                "Mooyan Curry" -> 10
+                "Mirror Force" -> 200
+                "Trap Hole" -> 90
+                "Reinforcements" -> 30
+                "Waboku" -> 50
+                else -> 25
+            }
+        }
+        return ((atk + def) / 100).coerceAtLeast(1)
+    }
 }

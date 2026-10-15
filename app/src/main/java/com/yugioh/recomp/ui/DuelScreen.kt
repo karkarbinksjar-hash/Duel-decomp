@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 data class AttackRayState(
     val fromPlayer: Boolean,
     val fromSlot: Int,
-    val toSlot: Int?, // null = direct attack
+    val toSlot: Int?,
     val isDirect: Boolean
 )
 
@@ -45,7 +45,7 @@ fun DuelScreen(
 ) {
     val engine = remember {
         DuelEngine().apply {
-            startDuel()
+            startDuel(DdsCampaignManager.selectedOpponentName)
         }
     }
 
@@ -53,6 +53,7 @@ fun DuelScreen(
     var updateCounter by remember { mutableStateOf(0) }
     fun refresh() { updateCounter++ }
 
+    var isShaderEnabled by remember { mutableStateOf(DdsCampaignManager.isGbcLcdShaderEnabled) }
     var selectedCardHandIndex by remember { mutableStateOf<Int?>(null) }
     var selectedPlayerMonsterSlot by remember { mutableStateOf<Int?>(null) }
     var selectedOpponentSlot by remember { mutableStateOf<Int?>(null) }
@@ -72,7 +73,6 @@ fun DuelScreen(
     var animatingSummonSlot by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var activeAttackRay by remember { mutableStateOf<AttackRayState?>(null) }
 
-    // Sound effect trigger helper
     fun playSfx(type: String) {
         val sfx = when (type) {
             "draw" -> ChiptuneSynthesizer.createCardDrawSfx()
@@ -85,7 +85,6 @@ fun DuelScreen(
         ChiptuneSynthesizer.playSfx(sfx)
     }
 
-    // Helper to flash phase banner
     fun announcePhase(phaseName: String) {
         coroutineScope.launch {
             phaseBannerText = phaseName
@@ -94,10 +93,9 @@ fun DuelScreen(
         }
     }
 
-    // Auto-select next ready attacker if player wiped enemy field
     fun autoTargetNextAttacker() {
         if (engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && engine.opponent.activeMonstersCount() == 0) {
-            val readySlot = engine.player.monsterZones.indices.firstOrNull { idx ->
+            val readySlot = engine.player.monsterZones.indices.firstOrNull { idx: Int ->
                 val m = engine.player.monsterZones[idx]
                 m != null && m.position == CardPosition.FACE_UP_ATTACK && !m.hasAttackedThisTurn
             }
@@ -107,7 +105,6 @@ fun DuelScreen(
         }
     }
 
-    // Coroutine-driven step-by-step AI Turn Sequencer
     fun executeAiTurnSequence() {
         coroutineScope.launch {
             isAiExecuting = true
@@ -215,7 +212,6 @@ fun DuelScreen(
         if (idx in engine.player.hand.indices) engine.player.hand[idx].card else null
     }
 
-    // Active card for Persistent Selected-Card HUD
     val activeHudCard: Card? = selectedFieldCard
         ?: selectedCard
         ?: selectedPlayerMonsterSlot?.let { engine.player.monsterZones[it]?.card }
@@ -240,7 +236,6 @@ fun DuelScreen(
                 indication = null,
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             ) {
-                // Tapping anywhere dismisses clash popup
                 if (engine.clashState != null) {
                     engine.dismissClash()
                     refresh()
@@ -254,9 +249,6 @@ fun DuelScreen(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // ==============================================================
-            // 1. TOP SECTION: OPPONENT PLAYFIELD
-            // ==============================================================
             OpponentSection(
                 opponent = engine.opponent,
                 selectedPlayerMonsterSlot = selectedPlayerMonsterSlot,
@@ -264,6 +256,11 @@ fun DuelScreen(
                 canDirectAttack = canDirectAttack,
                 animatingSummonSlot = animatingSummonSlot,
                 floatingDamage = opponentFloatingDamage,
+                isShaderEnabled = isShaderEnabled,
+                onToggleShader = {
+                    isShaderEnabled = !isShaderEnabled
+                    DdsCampaignManager.isGbcLcdShaderEnabled = isShaderEnabled
+                },
                 onOpponentMonsterClick = { slotIdx ->
                     if (!isAiExecuting && engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && selectedPlayerMonsterSlot != null) {
                         activeAttackRay = AttackRayState(
@@ -317,15 +314,15 @@ fun DuelScreen(
                         }
                     }
                 },
-                onInspectCard = {
-                    selectedFieldCard = it
+                onInspectCard = { card: Card ->
+                    selectedFieldCard = card
                     selectedCardHandIndex = null
-                    inspectingCard = it
+                    inspectingCard = card
                 },
-                onSelectOpponentSlot = { slot ->
+                onSelectOpponentSlot = { slot: Int ->
                     selectedOpponentSlot = slot
-                    engine.opponent.monsterZones[slot]?.card?.let {
-                        selectedFieldCard = it
+                    engine.opponent.monsterZones[slot]?.card?.let { card ->
+                        selectedFieldCard = card
                         selectedCardHandIndex = null
                     }
                 },
@@ -335,13 +332,11 @@ fun DuelScreen(
                 }
             )
 
-            // ==============================================================
-            // 2. MIDDLE SECTION: DUEL STAGE, ANIMATIONS & ANNOUNCER
-            // ==============================================================
             MiddleAnimationStage(
                 currentPhase = engine.currentPhase,
                 turnNumber = engine.turnNumber,
                 isPlayerTurn = engine.isPlayerTurn,
+                opponentName = engine.opponent.name,
                 isAiExecuting = isAiExecuting,
                 aiStepType = aiStepType,
                 aiAnnouncementText = aiAnnouncementText,
@@ -385,9 +380,6 @@ fun DuelScreen(
                 }
             )
 
-            // ==============================================================
-            // 3. BOTTOM SECTION: PLAYER PLAYFIELD
-            // ==============================================================
             PlayerSection(
                 player = engine.player,
                 selectedCard = selectedCard,
@@ -437,10 +429,10 @@ fun DuelScreen(
                         refresh()
                     }
                 },
-                onInspectCard = {
-                    selectedFieldCard = it
+                onInspectCard = { card: Card ->
+                    selectedFieldCard = card
                     selectedCardHandIndex = null
-                    inspectingCard = it
+                    inspectingCard = card
                 },
                 onOpenGraveyard = {
                     viewingGraveyardTitle = "${engine.player.name}'s Graveyard"
@@ -448,11 +440,7 @@ fun DuelScreen(
                 }
             )
 
-            // ==============================================================
-            // 4. PERSISTENT SELECTED-CARD HUD & CONTROLS
-            // ==============================================================
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Persistent HUD Bar (Always visible showing selected or active card)
                 SelectedCardHudBar(
                     card = activeHudCard,
                     onInspect = { activeHudCard?.let { inspectingCard = it } }
@@ -460,7 +448,6 @@ fun DuelScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Hand Carousel and Action Buttons
                 HandCarouselAndControls(
                     hand = engine.player.hand,
                     selectedCardIndex = selectedCardHandIndex,
@@ -542,12 +529,14 @@ fun DuelScreen(
             }
         }
 
-        // Card Detail Modal
+        if (isShaderEnabled) {
+            GbcShaderOverlay(alpha = 0.18f)
+        }
+
         inspectingCard?.let { card ->
             CardDetailDialog(card = card, onDismiss = { inspectingCard = null })
         }
 
-        // Graveyard Modal
         viewingGraveyardCards?.let { gyCards ->
             GraveyardDialog(
                 title = viewingGraveyardTitle ?: "Graveyard",
@@ -557,12 +546,15 @@ fun DuelScreen(
             )
         }
 
-        // Winner Overlay
         engine.winner?.let { winnerName ->
             WinnerOverlay(
                 winnerName = winnerName,
+                opponentName = engine.opponent.name,
+                rewardCard = engine.lastRewardCard,
+                deckCapacity = DdsCampaignManager.deckCapacity,
+                duelistLevel = DdsCampaignManager.duelistLevel,
                 onRestart = {
-                    engine.startDuel()
+                    engine.startDuel(DdsCampaignManager.selectedOpponentName)
                     selectedCardHandIndex = null
                     selectedPlayerMonsterSlot = null
                     selectedOpponentSlot = null
@@ -586,6 +578,8 @@ private fun OpponentSection(
     canDirectAttack: Boolean,
     animatingSummonSlot: Pair<Boolean, Int>?,
     floatingDamage: Int?,
+    isShaderEnabled: Boolean,
+    onToggleShader: () -> Unit,
     onOpponentMonsterClick: (Int) -> Unit,
     onDirectAttack: () -> Unit,
     onInspectCard: (Card) -> Unit,
@@ -600,7 +594,6 @@ private fun OpponentSection(
             .border(1.dp, Color(0xFF262C42), RoundedCornerShape(10.dp))
     ) {
         Column(modifier = Modifier.padding(6.dp)) {
-            // Opponent Header & Life Points
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -614,25 +607,40 @@ private fun OpponentSection(
                             .background(Color(0xFFDC2626)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("K", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(opponent.name.first().toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = opponent.name,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Deck: ${opponent.deck.size}",
+                        text = "(${opponent.deck.size})",
                         color = Color.Gray,
                         fontSize = 10.sp
                     )
                 }
 
-                // Opponent GY & LP Counter + Floating Damage
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = if (isShaderEnabled) Color(0xFF047857) else Color(0xFF1E293B),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .clickable { onToggleShader() }
+                            .border(0.5.dp, Color(0xFF475569), RoundedCornerShape(4.dp))
+                    ) {
+                        Text(
+                            text = if (isShaderEnabled) "📺 GBC" else "📺 OFF",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
                     Surface(
                         color = Color(0xFF1E2230),
                         shape = RoundedCornerShape(4.dp),
@@ -643,25 +651,25 @@ private fun OpponentSection(
                         Text(
                             text = "GY: ${opponent.graveyard.size}",
                             color = Color(0xFF94A3B8),
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "LP",
                         color = MillenniumGold,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 10.sp
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = "${opponent.lifePoints}",
                             color = if (opponent.lifePoints > 2000) LifePointGreen else AttackRed,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             fontFamily = FontFamily.Monospace
                         )
                         FloatingDamageText(damage = floatingDamage)
@@ -669,7 +677,6 @@ private fun OpponentSection(
                 }
             }
 
-            // High-Visibility Direct Attack Prompt over Opponent Area
             if (canDirectAttack) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
@@ -681,19 +688,19 @@ private fun OpponentSection(
                         .clickable { onDirectAttack() }
                 ) {
                     Text(
-                        text = "🎯 OPPONENT UNGUARDED! TAP HERE TO ATTACK DIRECTLY! ⚔",
+                        text = "🎯 OPPONENT UNGUARDED! TAP TO ATTACK DIRECTLY! ⚔",
                         color = Color(0xFFFCA5A5),
                         fontWeight = FontWeight.Black,
-                        fontSize = 10.5.sp,
+                        fontSize = 10.sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 3.dp)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Opponent Spell/Trap Zones (Row 1)
+            // Opponent Spell/Trap Zones
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -715,7 +722,7 @@ private fun OpponentSection(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Opponent Monster Zones (Row 2)
+            // Opponent Monster Zones
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -763,6 +770,7 @@ private fun MiddleAnimationStage(
     currentPhase: DuelPhase,
     turnNumber: Int,
     isPlayerTurn: Boolean,
+    opponentName: String,
     isAiExecuting: Boolean,
     aiStepType: String?,
     aiAnnouncementText: String?,
@@ -795,14 +803,13 @@ private fun MiddleAnimationStage(
             modifier = Modifier.padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Phase Ribbon
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "T$turnNumber ${if (isPlayerTurn) "PLAYER" else "KAIBA"}",
+                    text = "T$turnNumber ${if (isPlayerTurn) "YUGI" else opponentName.uppercase().take(8)}",
                     color = if (isPlayerTurn) MillenniumGold else Color(0xFFF87171),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -834,20 +841,18 @@ private fun MiddleAnimationStage(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                // Active attack energy ray animation overlay
                 activeAttackRay?.let { ray ->
                     AttackRayOverlay(ray = ray)
                 }
 
-                // AI Action Announcement Overlay
                 if (isAiExecuting && aiAnnouncementText != null) {
                     AiActionAnnouncementOverlay(
                         stepType = aiStepType,
                         announcement = aiAnnouncementText,
-                        featuredCard = aiFeaturedCard
+                        featuredCard = aiFeaturedCard,
+                        opponentName = opponentName
                     )
                 } else if (clashState != null) {
-                    // Clash / Battle Animation Viewport
                     Surface(
                         color = Color(0xFF1A1C29),
                         shape = RoundedCornerShape(6.dp),
@@ -896,7 +901,6 @@ private fun MiddleAnimationStage(
                         }
                     }
                 } else if (canDirectAttack) {
-                    // High-Visibility Direct Attack Button
                     Button(
                         onClick = onDirectAttack,
                         colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
@@ -942,7 +946,6 @@ private fun MiddleAnimationStage(
                         )
                     }
                 } else {
-                    // Recent Combat Log Ticker
                     val latest = combatLogs.firstOrNull() ?: "Ready to duel."
                     Text(
                         text = latest,
@@ -954,7 +957,6 @@ private fun MiddleAnimationStage(
                     )
                 }
 
-                // Phase Transition Flash Banner
                 phaseBannerText?.let { pName ->
                     PhaseTransitionBanner(phaseName = pName)
                 }
@@ -988,7 +990,7 @@ private fun PlayerSection(
             .border(1.dp, Color(0xFF262C42), RoundedCornerShape(10.dp))
     ) {
         Column(modifier = Modifier.padding(6.dp)) {
-            // Player Monster Zones (Row 1)
+            // Player Monster Zones
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1016,7 +1018,7 @@ private fun PlayerSection(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Player Spell/Trap Zones (Row 2)
+            // Player Spell/Trap Zones
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1038,7 +1040,7 @@ private fun PlayerSection(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Player Header & Life Points
+            // Player Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1059,29 +1061,18 @@ private fun PlayerSection(
                         text = player.name,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
-                    if (isPlayerTurn) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Surface(color = Color(0xFF1E3A8A), shape = RoundedCornerShape(3.dp)) {
-                            Text(
-                                text = currentPhase.shortName,
-                                color = Color(0xFF93C5FD),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Deck: ${player.deck.size}",
-                        color = Color.Gray,
-                        fontSize = 10.sp
+                        text = "DC: ${DdsCampaignManager.totalDeckCost()}/${DdsCampaignManager.deckCapacity}",
+                        color = MillenniumGold,
+                        fontSize = 9.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Player GY & LP Counter + Floating Damage
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         color = Color(0xFF1E2230),
@@ -1093,25 +1084,25 @@ private fun PlayerSection(
                         Text(
                             text = "GY: ${player.graveyard.size}",
                             color = Color(0xFF94A3B8),
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "LP",
                         color = MillenniumGold,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 10.sp
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = "${player.lifePoints}",
                             color = if (player.lifePoints > 2000) LifePointGreen else AttackRed,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             fontFamily = FontFamily.Monospace
                         )
                         FloatingDamageText(damage = floatingDamage)
@@ -1147,7 +1138,6 @@ private fun SelectedCardHudBar(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Card Thumbnail
                 Image(
                     bitmap = cardBitmap,
                     contentDescription = card.name,
@@ -1160,7 +1150,6 @@ private fun SelectedCardHudBar(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Card Info Center Column
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1176,7 +1165,6 @@ private fun SelectedCardHudBar(
                             modifier = Modifier.weight(1f, fill = false)
                         )
 
-                        // Attribute Gem Tag
                         Surface(
                             color = Color(card.attribute.colorHex),
                             shape = RoundedCornerShape(2.dp)
@@ -1187,6 +1175,20 @@ private fun SelectedCardHudBar(
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(2.dp)
+                        ) {
+                            Text(
+                                text = "Cost: ${card.deckCost}",
+                                color = Color(0xFFFDE047),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
                             )
                         }
                     }
@@ -1234,7 +1236,6 @@ private fun SelectedCardHudBar(
                     }
                 }
 
-                // Lore quick-view icon
                 IconButton(
                     onClick = onInspect,
                     modifier = Modifier.size(28.dp)
@@ -1303,7 +1304,6 @@ private fun HandCarouselAndControls(
             }
         }
 
-        // Context Action Buttons (appears when hand card is selected)
         AnimatedVisibility(
             visible = selectedCard != null,
             enter = fadeIn() + expandVertically(),
@@ -1380,7 +1380,6 @@ private fun HandCarouselAndControls(
             }
         }
 
-        // Horizontal Hand Carousel
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1403,7 +1402,6 @@ private fun HandCarouselAndControls(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Phase Controls Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1487,7 +1485,6 @@ private fun ZoneSlot(
         if (duelCard != null) {
             val card = duelCard.card
             if (duelCard.position.isFaceDown && isOpponent) {
-                // Facedown Opponent Card Back
                 val cardBackBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
                 Box(
                     modifier = Modifier.fillMaxSize().padding(2.dp),
@@ -1501,7 +1498,6 @@ private fun ZoneSlot(
                             .clip(RoundedCornerShape(3.dp))
                             .then(if (duelCard.position.isDefense) Modifier.rotate(90f) else Modifier)
                     )
-                    // Bottom indicator for facedown
                     Surface(
                         color = Color(0xCC000000),
                         shape = RoundedCornerShape(2.dp),
@@ -1517,7 +1513,6 @@ private fun ZoneSlot(
                     }
                 }
             } else if (duelCard.position.isDefense) {
-                // Defense Mode (Rotated Faceup or Player Facedown)
                 val cardBitmap = if (duelCard.position.isFaceDown) {
                     BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
                 } else {
@@ -1535,7 +1530,6 @@ private fun ZoneSlot(
                             .clip(RoundedCornerShape(3.dp))
                             .rotate(90f)
                     )
-                    // Visible Card Name at Top
                     Surface(
                         color = Color(0xEE0B0E17),
                         shape = RoundedCornerShape(2.dp),
@@ -1551,7 +1545,6 @@ private fun ZoneSlot(
                             modifier = Modifier.padding(horizontal = 2.dp)
                         )
                     }
-                    // Visible DEF score at Bottom
                     Surface(
                         color = Color(0xEE0F172A),
                         shape = RoundedCornerShape(2.dp),
@@ -1568,7 +1561,6 @@ private fun ZoneSlot(
                     }
                 }
             } else {
-                // Attack Mode / Faceup Spell or Trap
                 val cardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
                 Box(
                     modifier = Modifier.fillMaxSize().padding(1.dp),
@@ -1581,7 +1573,6 @@ private fun ZoneSlot(
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
                     )
-                    // Visible Card Name at Top
                     Surface(
                         color = Color(0xEE0B0E17),
                         shape = RoundedCornerShape(2.dp),
@@ -1597,7 +1588,6 @@ private fun ZoneSlot(
                             modifier = Modifier.padding(horizontal = 2.dp)
                         )
                     }
-                    // Visible ATK score at Bottom
                     Surface(
                         color = Color(0xEE0F172A),
                         shape = RoundedCornerShape(2.dp),
@@ -1665,7 +1655,7 @@ private fun HandCardItem(
                     .clip(RoundedCornerShape(4.dp))
             )
 
-            // Top Name Badge (Always identifies card)
+            // Top Name Badge
             Surface(
                 color = Color(0xEE0B0E17),
                 shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp),
@@ -1726,7 +1716,8 @@ private fun HandCardItem(
 private fun AiActionAnnouncementOverlay(
     stepType: String?,
     announcement: String?,
-    featuredCard: Card?
+    featuredCard: Card?,
+    opponentName: String
 ) {
     Surface(
         color = Color(0xF7111827),
@@ -1746,7 +1737,7 @@ private fun AiActionAnnouncementOverlay(
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Text(
-                    text = "KAIBA: ${stepType ?: "ACTION"}",
+                    text = "${opponentName.uppercase()}: ${stepType ?: "ACTION"}",
                     color = Color.White,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black,
@@ -1919,11 +1910,17 @@ private fun MiniCardPreview(card: Card) {
 @Composable
 private fun WinnerOverlay(
     winnerName: String,
+    opponentName: String,
+    rewardCard: Card?,
+    deckCapacity: Int,
+    duelistLevel: Int,
     onRestart: () -> Unit,
     onExit: () -> Unit
 ) {
+    val isPlayerWin = winnerName == "Yugi"
+
     Surface(
-        color = Color(0xDD000000),
+        color = Color(0xEE090D16),
         modifier = Modifier.fillMaxSize()
     ) {
         Column(
@@ -1934,19 +1931,68 @@ private fun WinnerOverlay(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (winnerName == "Yugi") "VICTORY!" else "DEFEAT",
-                color = if (winnerName == "Yugi") MillenniumGold else AttackRed,
+                text = if (isPlayerWin) "VICTORY!" else "DEFEAT",
+                color = if (isPlayerWin) MillenniumGold else AttackRed,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 2.sp
             )
+
             Spacer(modifier = Modifier.height(10.dp))
+
             Text(
-                text = "Winner: $winnerName",
+                text = if (isPlayerWin) "You defeated $opponentName!" else "$opponentName was victorious.",
                 color = Color.White,
-                fontSize = 18.sp
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(24.dp))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                color = Color(0xFF131722),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .border(1.dp, MillenniumGold, RoundedCornerShape(8.dp))
+                    .padding(12.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = if (isPlayerWin) "+3 Deck Capacity Earned!" else "+2 Deck Capacity Earned",
+                        color = if (isPlayerWin) LifePointGreen else Color(0xFF94A3B8),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Total Deck Capacity: $deckCapacity DC (Level $duelistLevel)",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    if (isPlayerWin && rewardCard != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "🎁 CARD WON FROM $opponentName:",
+                            color = MillenniumGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        MiniCardPreview(rewardCard)
+                        Text(
+                            text = "(Added to your Trunk Chest)",
+                            color = Color(0xFF86EFAC),
+                            fontSize = 9.sp,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             Button(
                 onClick = onRestart,
                 colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold),
@@ -1955,14 +2001,16 @@ private fun WinnerOverlay(
             ) {
                 Text("Rematch", color = Color.Black, fontWeight = FontWeight.Bold)
             }
+
             Spacer(modifier = Modifier.height(10.dp))
+
             Button(
                 onClick = onExit,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(0.6f)
             ) {
-                Text("Return to Importer", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Return to Stage 1 Map", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }

@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "yugioh-recomp"
+rootProject.name = "Duel-decomp"
 include(":app")

@@ -55,5 +55,5 @@ jobs:
       - name: Upload Unsigned/Signed Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: yugioh-recomp-apk
+          name: Duel-decomp-apk
           path: app/build/outputs/apk/release/*.apk
