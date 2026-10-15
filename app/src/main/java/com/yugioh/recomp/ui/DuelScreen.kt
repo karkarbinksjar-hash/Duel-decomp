@@ -42,6 +42,24 @@ data class AttackRayState(
     val isDirect: Boolean
 )
 
+fun getDuelistThemeColor(name: String): Pair<Color, Color> {
+    return when {
+        name.contains("Kaiba", ignoreCase = true) -> Pair(Color(0xFF1D4ED8), Color(0xFF38BDF8))
+        name.contains("Joey", ignoreCase = true) -> Pair(Color(0xFFD97706), Color(0xFFFBBF24))
+        name.contains("Yugi", ignoreCase = true) -> Pair(Color(0xFF7C3AED), Color(0xFFEC4899))
+        name.contains("Mai", ignoreCase = true) -> Pair(Color(0xFF047857), Color(0xFF34D399))
+        name.contains("Keith", ignoreCase = true) -> Pair(Color(0xFF374151), Color(0xFF9CA3AF))
+        name.contains("Pegasus", ignoreCase = true) -> Pair(Color(0xFFD4AF37), Color(0xFFA855F7))
+        name.contains("Marik", ignoreCase = true) -> Pair(Color(0xFF92400E), Color(0xFF7C2D12))
+        name.contains("Bakura", ignoreCase = true) -> Pair(Color(0xFF0F766E), Color(0xFF14B8A6))
+        name.contains("Ishizu", ignoreCase = true) -> Pair(Color(0xFFCA8A04), Color(0xFFFEF08A))
+        name.contains("Weevil", ignoreCase = true) -> Pair(Color(0xFF15803D), Color(0xFF86EFAC))
+        name.contains("Rex", ignoreCase = true) -> Pair(Color(0xFFB45309), Color(0xFFFDE047))
+        name.contains("Mako", ignoreCase = true) -> Pair(Color(0xFF0284C7), Color(0xFF38BDF8))
+        else -> Pair(Color(0xFFDC2626), Color(0xFFF87171))
+    }
+}
+
 @Composable
 fun DuelScreen(
     onNavigateBackToRom: () -> Unit
@@ -693,22 +711,24 @@ private fun OpponentSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val themeColors = getDuelistThemeColor(opponent.name)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(26.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFDC2626)),
+                            .background(Brush.linearGradient(listOf(themeColors.first, themeColors.second)))
+                            .border(1.5.dp, Color(0xFFFEF08A), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(opponent.name.first().toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(opponent.name.first().toString(), color = Color.White, fontWeight = FontWeight.Black, fontSize = 12.sp)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = opponent.name,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 12.5.sp
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -783,6 +803,29 @@ private fun OpponentSection(
                     }
                 }
             }
+
+            // Smooth Animated LP Color Gauge Bar
+            val lpProgress = (opponent.lifePoints / 8000f).coerceIn(0f, 1f)
+            val animatedProgress by animateFloatAsState(
+                targetValue = lpProgress,
+                animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                label = "oppLpProgress"
+            )
+            val gaugeColor = when {
+                opponent.lifePoints > 3000 -> Color(0xFF10B981) // Emerald
+                opponent.lifePoints > 1500 -> Color(0xFFF59E0B) // Amber
+                else -> Color(0xFFEF4444) // Red
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.5.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = gaugeColor,
+                trackColor = Color(0xFF1E2436)
+            )
 
             if (canDirectAttack) {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -931,9 +974,16 @@ private fun MiddleAnimationStage(
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     DuelPhase.values().forEach { phase ->
                         val isActive = phase == currentPhase
+                        val phaseColor = when (phase) {
+                            DuelPhase.DRAW_PHASE, DuelPhase.STANDBY_PHASE -> Color(0xFF38BDF8)
+                            DuelPhase.MAIN_PHASE_1, DuelPhase.MAIN_PHASE_2 -> Color(0xFFFBBF24)
+                            DuelPhase.BATTLE_PHASE -> Color(0xFFEF4444)
+                            DuelPhase.END_PHASE -> Color(0xFFA855F7)
+                        }
                         Surface(
-                            color = if (isActive) MillenniumGold else Color(0xFF1A202E),
-                            shape = RoundedCornerShape(3.dp)
+                            color = if (isActive) phaseColor else Color(0xFF1A202E),
+                            shape = RoundedCornerShape(3.dp),
+                            modifier = if (isActive) Modifier.border(1.dp, Color.White, RoundedCornerShape(3.dp)) else Modifier
                         ) {
                             Text(
                                 text = phase.shortName,
@@ -1159,6 +1209,29 @@ private fun PlayerSection(
 
             Spacer(modifier = Modifier.height(6.dp))
 
+            // Smooth Animated LP Color Gauge Bar
+            val lpProgress = (player.lifePoints / 8000f).coerceIn(0f, 1f)
+            val animatedProgress by animateFloatAsState(
+                targetValue = lpProgress,
+                animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                label = "playerLpProgress"
+            )
+            val gaugeColor = when {
+                player.lifePoints > 3000 -> Color(0xFF10B981) // Emerald
+                player.lifePoints > 1500 -> Color(0xFFF59E0B) // Amber
+                else -> Color(0xFFEF4444) // Red
+            }
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.5.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = gaugeColor,
+                trackColor = Color(0xFF1E2436)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
             // Player Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1168,12 +1241,13 @@ private fun PlayerSection(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(26.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF2563EB)),
+                            .background(Brush.linearGradient(listOf(Color(0xFF2563EB), Color(0xFF38BDF8))))
+                            .border(1.5.dp, Color(0xFFFEF08A), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Y", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Y", color = Color.White, fontWeight = FontWeight.Black, fontSize = 12.sp)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -1182,6 +1256,22 @@ private fun PlayerSection(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
+                    if (isPlayerTurn) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Surface(
+                            color = Color(0xFF1E3A8A),
+                            shape = RoundedCornerShape(3.dp),
+                            modifier = Modifier.border(0.5.dp, Color(0xFF60A5FA), RoundedCornerShape(3.dp))
+                        ) {
+                            Text(
+                                text = currentPhase.shortName,
+                                color = Color(0xFF93C5FD),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "DC: ${DdsCampaignManager.totalDeckCost()}/${DdsCampaignManager.deckCapacity}",
@@ -1760,14 +1850,89 @@ private fun ZoneSlot(
             }
         }
 
-        // Golden Summoning Portal overlay animation
+        // Golden Summoning Portal or Spell/Trap Activation Glow
         if (isSummonAnimating) {
-            GoldenSummonPortal(modifier = Modifier.fillMaxSize())
+            if (isSpellTrap) {
+                SpellTrapActivationGlow(
+                    isTrap = duelCard?.card?.isTrap == true,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                GoldenSummonPortal(modifier = Modifier.fillMaxSize())
+            }
         }
 
         // Explosive Card Destruction Burst overlay animation
         if (isDestructionAnimating) {
             CardDestructionBurst(modifier = Modifier.fillMaxSize())
+        }
+    }
+}
+
+// =========================================================================
+// SPELL / TRAP ACTIVATION RUNIC GLOW
+// =========================================================================
+@Composable
+private fun SpellTrapActivationGlow(
+    isTrap: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "stGlow")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart),
+        label = "stRot"
+    )
+    val ringPulse by infiniteTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.3f,
+        animationSpec = infiniteRepeatable(tween(400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "stRing"
+    )
+
+    val coreColor = if (isTrap) Color(0xFFF43F5E) else Color(0xFF14B8A6)
+    val outerGlow = if (isTrap) Color(0xFFBE185D) else Color(0xFF0D9488)
+
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val r = (min(size.width, size.height) / 2f) * ringPulse
+
+            // Runic Hexagram Ring
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(coreColor.copy(alpha = 0.7f), outerGlow.copy(alpha = 0.3f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(cx, cy),
+                    radius = r * 1.5f
+                ),
+                radius = r * 1.5f,
+                center = androidx.compose.ui.geometry.Offset(cx, cy)
+            )
+
+            drawCircle(
+                color = coreColor,
+                radius = r * 0.9f,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+            )
+
+            // Magic Seal Cross Rays
+            val rays = 6
+            for (i in 0 until rays) {
+                val rad = (i * (Math.PI / 3.0) + Math.toRadians(rotation.toDouble()))
+                val rx = (cx + cos(rad) * r).toFloat()
+                val ry = (cy + sin(rad) * r).toFloat()
+                drawLine(
+                    color = Color.White.copy(alpha = 0.8f),
+                    start = androidx.compose.ui.geometry.Offset(cx, cy),
+                    end = androidx.compose.ui.geometry.Offset(rx, ry),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+            }
         }
     }
 }
@@ -2035,7 +2200,7 @@ private fun AttackRayOverlay(
 }
 
 // =========================================================================
-// GOLDEN MILLENNIUM SUMMONING PORTAL
+// GOLDEN MILLENNIUM SUMMONING PORTAL & LIGHT PILLAR
 // =========================================================================
 @Composable
 private fun GoldenSummonPortal(modifier: Modifier = Modifier) {
@@ -2043,13 +2208,13 @@ private fun GoldenSummonPortal(modifier: Modifier = Modifier) {
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart),
         label = "rot"
     )
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 0.85f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(tween(350, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(tween(320, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "pulse"
     )
 
@@ -2062,7 +2227,22 @@ private fun GoldenSummonPortal(modifier: Modifier = Modifier) {
             val cy = size.height / 2f
             val r = (min(size.width, size.height) / 2f) * pulseScale
 
-            // Glowing Golden Portal Aura
+            // 1. Soaring Vertical Golden Light Beam Pillar
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color(0x99FEF08A),
+                        Color(0xDDFFD700),
+                        Color(0x99F59E0B),
+                        Color.Transparent
+                    )
+                ),
+                topLeft = androidx.compose.ui.geometry.Offset(0f, -size.height * 0.4f),
+                size = androidx.compose.ui.geometry.Size(size.width, size.height * 1.8f)
+            )
+
+            // 2. Glowing Golden Portal Radial Aura
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(Color(0xFFFEF08A), Color(0xFFF59E0B), Color.Transparent),
@@ -2073,19 +2253,19 @@ private fun GoldenSummonPortal(modifier: Modifier = Modifier) {
                 center = androidx.compose.ui.geometry.Offset(cx, cy)
             )
 
-            // Inner Millennium Circle
+            // 3. Inner Millennium Ring
             drawCircle(
                 color = Color(0xFFFFD700),
                 radius = r * 0.85f,
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
             )
 
-            // Millennium Star Rays
+            // 4. Rotating Millennium Star Rays
             val numRays = 8
             for (i in 0 until numRays) {
                 val rad = (i * (Math.PI / 4.0) + Math.toRadians(rotation.toDouble()))
-                val rx = (cx + cos(rad) * r * 0.9f).toFloat()
-                val ry = (cy + sin(rad) * r * 0.9f).toFloat()
+                val rx = (cx + cos(rad) * r * 0.95f).toFloat()
+                val ry = (cy + sin(rad) * r * 0.95f).toFloat()
                 drawLine(
                     color = Color(0xFFFFFBEB),
                     start = androidx.compose.ui.geometry.Offset(cx, cy),

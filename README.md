@@ -72,10 +72,13 @@ The engine **does not bundle or ship with copyrighted game assets or full ROMs**
    - **Rolling Life Points Counter**: Smooth decrement steps with pulsing crimson text and rapid chiptune damage ticks.
    - **Direct Attack Blasts**: Golden beam strikes directly against the opponent's LP header.
 
-9. **Authentic GBC Card Presentation & Pixel Art Upscaling**:
-   - Nearest-neighbor integer upscaling preserving razor-sharp retro pixel edges without blur.
-   - Authentic Dark Duel Stories (GBC) yellow card status screen with card ID, Level, DC, ATK, DEF, Monster Type, Alignment, and lore.
-   - Modular GBA expansion architecture supporting 16-color 4bpp/8bpp assets (*The Eternal Duelist Soul* / *Worldwide Edition*).
+9. **High-Definition Card Presentation & Modernized Neon Arena (v1.9.0)**:
+   - **144x208 Ultra-Sharp Resolution**: Official 59:86 Yu-Gi-Oh! card ratio with realistic 3D bevels, rounded corner contours, and drop shadow edges.
+   - **Authentic Millennium Eye Card Back**: Deep swirled mahogany/chocolate background with radial vortex lines, dual concentric gold rings, and detailed golden Millennium Eye emblem.
+   - **3D Glassmorphic Attribute Orbs & Ruby Level Stars**: Attribute gems with golden bezels, specular highlights, and dimensional ruby stars with facet borders.
+   - **Integrated 3x5 Bitmap Typography Engine**: Renders card names, type lines, and metallic `ATK/DEF` scoreboard ribbons directly into card textures.
+   - **Ultra Rare Holographic Prismatic Shimmer**: Dynamic rainbow spectral shimmer foil overlay across iconic and high-level card illustrations.
+   - **Modernized Duel Arena Aesthetics**: Glassmorphic zone pedestals with glowing neon borders, animated LED rolling LP counters with color gradient health gauges, soaring vertical golden summon beam pillars, explosive card destruction bursts, and spell/trap runic activation glows.
 
 10. **CI/CD & Automated Release Pipeline**:
    - Application ID restored to `com.yugioh.recomp` to ensure in-place updates over previous versions without creating duplicate apps.

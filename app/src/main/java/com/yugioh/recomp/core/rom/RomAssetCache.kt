@@ -42,8 +42,8 @@ object RomAssetCache {
                 val sprite = GbaRomParser.extractCardSpriteGba(romBytes, card, 64, 64)
                 cardArtSprites[card.id] = sprite
 
-                val fullPixels = CardArtRenderer.renderGbaFullCard(card, 96, 140)
-                cardFullTextures[card.id] = DecodedSprite(96, 140, fullPixels)
+                val fullPixels = CardArtRenderer.renderGbaFullCard(card, 144, 208)
+                cardFullTextures[card.id] = DecodedSprite(144, 208, fullPixels)
             }
         } else {
             // GBC BASE PIPELINE: Dark Duel Stories (2bpp planar tiles)
@@ -56,14 +56,14 @@ object RomAssetCache {
                 val sprite = DdsRomParser.extractCardSprite(romBytes, card, 64, 64)
                 cardArtSprites[card.id] = sprite
 
-                val fullPixels = CardArtRenderer.renderFullCard(card, 96, 140)
-                cardFullTextures[card.id] = DecodedSprite(96, 140, fullPixels)
+                val fullPixels = CardArtRenderer.renderFullCard(card, 144, 208)
+                cardFullTextures[card.id] = DecodedSprite(144, 208, fullPixels)
             }
         }
 
         // Card Back
-        val backPixels = CardArtRenderer.renderCardBack(96, 140)
-        cardBackSprite = DecodedSprite(96, 140, backPixels)
+        val backPixels = CardArtRenderer.renderCardBack(144, 208)
+        cardBackSprite = DecodedSprite(144, 208, backPixels)
 
         isAssetPipelineReady = true
     }
@@ -100,11 +100,11 @@ object RomAssetCache {
             val card = getCard(cardId) ?: CardDataExtractor.getCanonicalDdsCardDatabase().firstOrNull { it.id == cardId }
             if (card != null) {
                 val pixels = if (activeTarget?.platform == RomPlatform.GBA) {
-                    CardArtRenderer.renderGbaFullCard(card, 96, 140)
+                    CardArtRenderer.renderGbaFullCard(card, 144, 208)
                 } else {
-                    CardArtRenderer.renderFullCard(card, 96, 140)
+                    CardArtRenderer.renderFullCard(card, 144, 208)
                 }
-                DecodedSprite(96, 140, pixels).also { cardFullTextures[cardId] = it }
+                DecodedSprite(144, 208, pixels).also { cardFullTextures[cardId] = it }
             } else {
                 getCardSprite(cardId)
             }
@@ -113,8 +113,8 @@ object RomAssetCache {
 
     fun getCardBack(): DecodedSprite {
         return cardBackSprite ?: run {
-            val pixels = CardArtRenderer.renderCardBack(96, 140)
-            DecodedSprite(96, 140, pixels).also { cardBackSprite = it }
+            val pixels = CardArtRenderer.renderCardBack(144, 208)
+            DecodedSprite(144, 208, pixels).also { cardBackSprite = it }
         }
     }
 

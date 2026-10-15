@@ -23,8 +23,8 @@ class CardArtRendererTest {
             monsterType = MonsterType.DRAGON
         )
 
-        val width = 96
-        val height = 140
+        val width = 144
+        val height = 208
         val pixels = CardArtRenderer.renderFullCard(bewd, width, height)
 
         assertEquals(width * height, pixels.size)
@@ -47,8 +47,8 @@ class CardArtRendererTest {
             cardType = CardType.SPELL
         )
 
-        val pixelsSpell = CardArtRenderer.renderFullCard(potOfGreed, 96, 140)
-        assertEquals(96 * 140, pixelsSpell.size)
+        val pixelsSpell = CardArtRenderer.renderFullCard(potOfGreed, 144, 208)
+        assertEquals(144 * 208, pixelsSpell.size)
 
         val mirrorForce = Card(
             id = 200,
@@ -59,14 +59,14 @@ class CardArtRendererTest {
             attribute = CardAttribute.TRAP,
             cardType = CardType.TRAP
         )
-        val pixelsTrap = CardArtRenderer.renderFullCard(mirrorForce, 96, 140)
-        assertEquals(96 * 140, pixelsTrap.size)
+        val pixelsTrap = CardArtRenderer.renderFullCard(mirrorForce, 144, 208)
+        assertEquals(144 * 208, pixelsTrap.size)
     }
 
     @Test
     fun testRenderCardBack() {
-        val width = 96
-        val height = 140
+        val width = 144
+        val height = 208
         val pixels = CardArtRenderer.renderCardBack(width, height)
         assertEquals(width * height, pixels.size)
 
@@ -100,12 +100,12 @@ class CardArtRendererTest {
         assertEquals(64, sprite.height)
 
         val fullTexture = RomAssetCache.getCardFullTexture(1)
-        assertEquals(96, fullTexture.width)
-        assertEquals(140, fullTexture.height)
+        assertEquals(144, fullTexture.width)
+        assertEquals(208, fullTexture.height)
 
         val back = RomAssetCache.getCardBack()
-        assertEquals(96, back.width)
-        assertEquals(140, back.height)
+        assertEquals(144, back.width)
+        assertEquals(208, back.height)
     }
 
     @Test
