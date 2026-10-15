@@ -288,4 +288,19 @@ class DuelEngineTest {
 
         assertTrue("Turn must return to player", engine.isPlayerTurn)
     }
+
+    @Test
+    fun testTristanSummonsMonsterDuringAiTurn() {
+        engine.passTurn(autoRunAi = false)
+        assertFalse(engine.isPlayerTurn)
+        assertEquals(0, engine.opponent.activeMonstersCount())
+
+        val steps = engine.planAiTurnSteps()
+        assertTrue("AI must plan at least one SummonMonster step", steps.any { it is AiTurnStep.SummonMonster })
+
+        val summonStep = steps.first { it is AiTurnStep.SummonMonster }
+        val executed = engine.executeAiStep(summonStep)
+        assertTrue("Summon execution must succeed", executed)
+        assertEquals(1, engine.opponent.activeMonstersCount())
+    }
 }
