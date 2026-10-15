@@ -77,11 +77,26 @@ data class RomTarget(
             description = "GBA multi-region expansion target - expanded card pool and battle animations."
         )
 
+        /**
+         * GBA Expansion Target: Yu-Gi-Oh! Worldwide Edition (USA) No-Intro Revision
+         */
+        val WORLDWIDE_EDITION_USA_REV = RomTarget(
+            id = "wwe_usa_gba_rev",
+            title = "Yu-Gi-Oh! Worldwide Edition (USA) [No-Intro]",
+            platform = RomPlatform.GBA,
+            expectedSha1 = "10373e44927b23528f86cb326cbcfd8e5f1a546c",
+            expectedCrc32 = "573e04cf",
+            headerTitle = "YUGIOH WWE",
+            gameCode = "AYWE",
+            description = "GBA multi-region expansion target - expanded card pool and battle animations."
+        )
+
         val ALL_TARGETS = listOf(
             DARK_DUEL_STORIES_USA,
             DARK_DUEL_STORIES_EUR,
             ETERNAL_DUELIST_SOUL_USA,
-            WORLDWIDE_EDITION_USA
+            WORLDWIDE_EDITION_USA,
+            WORLDWIDE_EDITION_USA_REV
         )
     }
 }

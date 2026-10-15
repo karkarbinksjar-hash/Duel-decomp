@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yugioh.recomp.core.rom.RomAssetCache
+import com.yugioh.recomp.core.rom.RomPlatform
 import com.yugioh.recomp.core.rom.RomTarget
 import com.yugioh.recomp.core.rom.RomValidationResult
 import com.yugioh.recomp.core.rom.RomValidator
@@ -170,22 +171,24 @@ fun RomImportScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Action Buttons: File Picker & Verified Sample
+        // Action Buttons: File Picker & Verified Samples (GBC / GBA)
+        Button(
+            onClick = { filePickerLauncher.launch("*/*") },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Select ROM (.gbc / .gba)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Button(
-                onClick = { filePickerLauncher.launch("*/*") },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Select ROM", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-
             Button(
                 onClick = {
                     val synthBytes = RomValidator.createSyntheticDdsRom()
@@ -195,7 +198,19 @@ fun RomImportScreen(
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Test Cartridge Dump", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Test GBC Dump (DDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Button(
+                onClick = {
+                    val synthBytes = RomValidator.createSyntheticGbaRom()
+                    processRomBytes(synthBytes, "Yu-Gi-Oh! The Eternal Duelist Soul (USA) [Synthetic].gba")
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4338CA)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Test GBA Dump (EDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -307,11 +322,24 @@ fun RomImportScreen(
                         fontSize = 10.sp
                     )
                     Text(
-                        text = RomTarget.DARK_DUEL_STORIES_USA.expectedSha1,
+                        text = (res as? RomValidationResult.Valid)?.target?.expectedSha1
+                            ?: (res as? RomValidationResult.ChecksumMismatch)?.expectedSha1
+                            ?: RomTarget.DARK_DUEL_STORIES_USA.expectedSha1,
                         color = Color(0xFF38BDF8),
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
+
+                    val activePlatform = (res as? RomValidationResult.Valid)?.target?.platform
+                    if (activePlatform != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Platform Mode: ${activePlatform.name} (${if (activePlatform == RomPlatform.GBA) "16-Color Advance" else "2bpp Retro"})",
+                            color = if (activePlatform == RomPlatform.GBA) Color(0xFFA5B4FC) else MillenniumGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

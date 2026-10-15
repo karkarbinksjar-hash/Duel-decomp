@@ -73,4 +73,36 @@ object GbaTileDecoder {
         }
         return palette
     }
+
+    /**
+     * Decodes a grid of 4bpp GBA tiles (widthTiles x heightTiles) into a DecodedSprite.
+     */
+    fun decodeTileGrid4bpp(
+        rom: ByteArray,
+        startOffset: Int,
+        widthTiles: Int,
+        heightTiles: Int,
+        palette: IntArray = DEFAULT_GBA_PALETTE
+    ): DecodedSprite {
+        val pixelWidth = widthTiles * 8
+        val pixelHeight = heightTiles * 8
+        val pixels = IntArray(pixelWidth * pixelHeight)
+        var currentOffset = startOffset
+
+        for (ty in 0 until heightTiles) {
+            for (tx in 0 until widthTiles) {
+                val tilePixels = decodeTile4bpp(rom, currentOffset, palette)
+                currentOffset += 32 // 4bpp tile = 32 bytes
+
+                val destX = tx * 8
+                val destY = ty * 8
+                for (row in 0 until 8) {
+                    val destRowStart = (destY + row) * pixelWidth + destX
+                    System.arraycopy(tilePixels, row * 8, pixels, destRowStart, 8)
+                }
+            }
+        }
+
+        return DecodedSprite(pixelWidth, pixelHeight, pixels)
+    }
 }

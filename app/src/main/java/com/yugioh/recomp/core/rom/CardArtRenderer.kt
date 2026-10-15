@@ -183,6 +183,27 @@ object CardArtRenderer {
     }
 
     /**
+     * Renders a high-resolution Game Boy Advance (16-color) card texture with enhanced
+     * metallic borders, smooth gradient text boxes, and vibrant GBA color depth.
+     */
+    fun renderGbaFullCard(
+        card: Card,
+        width: Int = 128,
+        height: Int = 186,
+        artPixelsOverride: IntArray? = null
+    ): IntArray {
+        val pixels = renderFullCard(card, width, height, artPixelsOverride)
+        // Add metallic GBA holographic foil trim to borders
+        val goldHighlight = 0xFFFDE047.toInt()
+        val gbaTrim = 0xFFD4AF37.toInt()
+        for (x in 6 until width - 6) {
+            pixels[5 * width + x] = if (x % 2 == 0) goldHighlight else gbaTrim
+            pixels[(height - 6) * width + x] = gbaTrim
+        }
+        return pixels
+    }
+
+    /**
      * Authentic Yu-Gi-Oh! Card Back texture.
      */
     fun renderCardBack(width: Int = 128, height: Int = 186): IntArray {

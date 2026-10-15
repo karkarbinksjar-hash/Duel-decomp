@@ -689,6 +689,21 @@ private fun OpponentSection(
                         color = Color.Gray,
                         fontSize = 10.sp
                     )
+                    if (RomAssetCache.activeTarget?.platform == com.yugioh.recomp.core.rom.RomPlatform.GBA) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = Color(0xFF4338CA),
+                            shape = RoundedCornerShape(3.dp)
+                        ) {
+                            Text(
+                                text = "GBA",
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
