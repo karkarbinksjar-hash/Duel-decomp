@@ -279,8 +279,8 @@ class DuelEngineTest {
         assertEquals(com.yugioh.recomp.core.rom.RomPlatform.GBA, com.yugioh.recomp.core.rom.RomAssetCache.activeTarget?.platform)
         val jinzoTexture = com.yugioh.recomp.core.rom.RomAssetCache.getCardFullTexture(801)
         assertNotNull(jinzoTexture)
-        assertEquals(96, jinzoTexture.width)
-        assertEquals(140, jinzoTexture.height)
+        assertEquals(144, jinzoTexture.width)
+        assertEquals(208, jinzoTexture.height)
     }
 
     @Test

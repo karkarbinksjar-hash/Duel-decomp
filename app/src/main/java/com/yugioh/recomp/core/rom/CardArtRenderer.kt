@@ -25,6 +25,17 @@ object CardArtRenderer {
     private const val COLOR_STAR_GOLD = 0xFFFFD700.toInt()
     private const val COLOR_STAR_RED = 0xFFDC2626.toInt()
 
+    private val ULTRA_RARE_CARDS = setOf(
+        "Blue-Eyes White Dragon", "Dark Magician", "Red-Eyes B. Dragon",
+        "Summoned Skull", "Jinzo", "Buster Blader", "Exodia the Forbidden One",
+        "Right Arm of the Forbidden One", "Left Arm of the Forbidden One",
+        "Right Leg of the Forbidden One", "Left Leg of the Forbidden One",
+        "Raigeki", "Mirror Force", "Monster Reborn", "Magic Cylinder",
+        "Change of Heart", "Dark Hole", "Harpie's Feather Duster",
+        "Barrel Dragon", "Relinquished", "Gearfried the Iron Knight",
+        "Trap Hole", "Swords of Revealing Light"
+    )
+
     /**
      * Integer pixel art upscaler: scales a sprite by an integer factor [scale]
      * using nearest-neighbor replication to preserve razor-sharp retro pixel edges.
@@ -53,11 +64,12 @@ object CardArtRenderer {
     /**
      * Renders a complete Yu-Gi-Oh! card texture including border, name header,
      * attribute orb, star row, framed illustration window, text lore box, and ATK/DEF scores.
+     * High-definition standard resolution: 144x208 (official 59:86 aspect ratio).
      */
     fun renderFullCard(
         card: Card,
-        width: Int = 128,
-        height: Int = 186,
+        width: Int = 144,
+        height: Int = 208,
         artPixelsOverride: IntArray? = null
     ): IntArray {
         val pixels = IntArray(width * height)
@@ -65,7 +77,7 @@ object CardArtRenderer {
         val frameColor = when {
             card.isSpell -> COLOR_FRAME_SPELL
             card.isTrap -> COLOR_FRAME_TRAP
-            card.level >= 5 || card.name.contains("Dragon") || card.name.contains("Magician") || card.name.contains("Skull") -> COLOR_FRAME_EFFECT_MONSTER
+            card.level >= 5 || card.name.contains("Dragon") || card.name.contains("Magician") || card.name.contains("Skull") || card.name.contains("Jinzo") || card.name.contains("Blader") -> COLOR_FRAME_EFFECT_MONSTER
             else -> COLOR_FRAME_NORMAL_MONSTER
         }
 
@@ -77,7 +89,7 @@ object CardArtRenderer {
 
         // 1. Fill Card Base with subtle textured gradient
         for (y in 0 until height) {
-            val vGrad = ((y.toFloat() / height) * 20).toInt() - 10
+            val vGrad = ((y.toFloat() / height) * 22).toInt() - 11
             val baseR = (((frameColor shr 16) and 0xFF) + vGrad).coerceIn(0, 255)
             val baseG = (((frameColor shr 8) and 0xFF) + vGrad).coerceIn(0, 255)
             val baseB = ((frameColor and 0xFF) + vGrad).coerceIn(0, 255)
@@ -88,96 +100,198 @@ object CardArtRenderer {
             }
         }
 
-        // 2. Outer Card Border
-        val borderWidth = 4
+        // 2. Realistic 3D Outer Border & Bevel with rounded corners
+        val borderWidth = (width * 0.035f).toInt().coerceAtLeast(4)
         for (y in 0 until height) {
             for (x in 0 until width) {
+                val isCorner = (x < 3 && y < 3) || (x >= width - 3 && y < 3) ||
+                               (x < 3 && y >= height - 3) || (x >= width - 3 && y >= height - 3)
+                if (isCorner) {
+                    pixels[y * width + x] = 0x00000000
+                    continue
+                }
+
                 if (x < borderWidth || x >= width - borderWidth || y < borderWidth || y >= height - borderWidth) {
-                    pixels[y * width + x] = COLOR_CARD_BORDER_OUTER
+                    if (y < borderWidth || x < borderWidth) {
+                        pixels[y * width + x] = COLOR_CARD_BORDER_INNER
+                    } else {
+                        pixels[y * width + x] = COLOR_CARD_BORDER_OUTER
+                    }
                 } else if (x == borderWidth || x == width - borderWidth - 1 || y == borderWidth || y == height - borderWidth - 1) {
-                    pixels[y * width + x] = COLOR_CARD_BORDER_INNER
+                    pixels[y * width + x] = 0xFF2A1C12.toInt()
                 }
             }
         }
 
         // 3. Name Header Bar (Top)
-        val nameBarTop = 8
-        val nameBarHeight = 16
-        val nameBarLeft = 8
-        val nameBarRight = width - 8
-        drawRect(pixels, width, nameBarLeft, nameBarTop, nameBarRight - nameBarLeft, nameBarHeight, 0xFF1E222D.toInt())
-        drawRectBorder(pixels, width, nameBarLeft, nameBarTop, nameBarRight - nameBarLeft, nameBarHeight, 0xFF4B5563.toInt())
+        val nameBarTop = (height * 0.045f).toInt()
+        val nameBarHeight = (height * 0.088f).toInt()
+        val nameBarLeft = borderWidth + 4
+        val nameBarRight = width - borderWidth - 4
+        val nameBarWidth = nameBarRight - nameBarLeft
 
-        // Attribute Orb (Top-Right of Name Bar)
-        val orbRadius = 6
+        // Brushed metal background for name plate
+        for (ny in nameBarTop until (nameBarTop + nameBarHeight)) {
+            val shade = 0x1E + ((ny - nameBarTop) * 2)
+            val plateColor = (0xFF shl 24) or (shade shl 16) or ((shade + 4) shl 8) or (shade + 12)
+            for (nx in nameBarLeft until nameBarRight) {
+                pixels[ny * width + nx] = plateColor
+            }
+        }
+        drawRectBorder(pixels, width, nameBarLeft, nameBarTop, nameBarWidth, nameBarHeight, 0xFF4B5563.toInt())
+        drawRectBorder(pixels, width, nameBarLeft + 1, nameBarTop + 1, nameBarWidth - 2, nameBarHeight - 2, 0xFF222938.toInt())
+
+        // Render Card Name in Name Bar
+        val nameText = if (card.name.length > 20) card.name.take(19) + "." else card.name
+        val nameColor = if (card.level >= 7 || card.name in ULTRA_RARE_CARDS) 0xFFFDE047.toInt() else 0xFFFFFFFF.toInt()
+        val nameY = nameBarTop + (nameBarHeight - 5) / 2
+        drawText3x5(pixels, width, nameBarLeft + 4, nameY, nameText, nameColor, 0xFF000000.toInt())
+
+        // 3D Glassmorphic Attribute Orb (Top-Right of Name Bar)
+        val orbRadius = (nameBarHeight / 2) - 1
         val orbCenterX = nameBarRight - orbRadius - 2
-        val orbCenterY = nameBarTop + orbRadius + 2
+        val orbCenterY = nameBarTop + (nameBarHeight / 2)
         val attrColor = getAttributeColor(card.attribute)
-        drawCircle(pixels, width, orbCenterX, orbCenterY, orbRadius, attrColor)
-        drawCircle(pixels, width, orbCenterX, orbCenterY, orbRadius - 2, brighten(attrColor, 40))
 
-        // 4. Star Rating Row (For Monsters)
-        val artTop = if (card.isMonster) 34 else 28
+        // Outer golden bezel ring
+        drawCircle(pixels, width, orbCenterX, orbCenterY, orbRadius + 1, 0xFFD4AF37.toInt())
+        // Main attribute jewel base
+        drawCircle(pixels, width, orbCenterX, orbCenterY, orbRadius, attrColor)
+        // Inner depth gradient
+        drawCircle(pixels, width, orbCenterX, orbCenterY, orbRadius - 2, brighten(attrColor, 35))
+        // Specular highlight glint
+        putPixel(pixels, width, height, orbCenterX - (orbRadius / 2), orbCenterY - (orbRadius / 2), 0xFFFFFFFF.toInt())
+        putPixel(pixels, width, height, orbCenterX - (orbRadius / 2) + 1, orbCenterY - (orbRadius / 2), 0xFFFFFFFF.toInt())
+
+        // 4. Star Level Row (For Monsters)
+        val starRowY = nameBarTop + nameBarHeight + 3
         if (card.isMonster && card.level > 0) {
-            val starRowY = 25
             val starCount = min(12, card.level)
-            val starSpacing = 8
-            val startX = width - 14 - (starCount * starSpacing)
+            val starSpacing = (width * 0.065f).toInt().coerceAtLeast(8)
+            val startX = nameBarRight - (starCount * starSpacing)
             for (i in 0 until starCount) {
                 val sx = startX + (i * starSpacing)
-                drawStar(pixels, width, sx, starRowY, 3, COLOR_STAR_GOLD, COLOR_STAR_RED)
+                drawStar(pixels, width, sx, starRowY + 3, 3, COLOR_STAR_GOLD, COLOR_STAR_RED)
+                putPixel(pixels, width, height, sx, starRowY + 2, 0xFFFFFBEB.toInt())
             }
         }
 
         // 5. Central Artwork Box
-        val artLeft = 14
-        val artWidth = width - 28
-        val artHeight = 72
-        drawRect(pixels, width, artLeft - 2, artTop - 2, artWidth + 4, artHeight + 4, 0xFF1E2430.toInt())
-        drawRectBorder(pixels, width, artLeft - 2, artTop - 2, artWidth + 4, artHeight + 4, 0xFF785B28.toInt())
+        val artTop = if (card.isMonster && card.level > 0) starRowY + 8 else nameBarTop + nameBarHeight + 5
+        val artLeft = borderWidth + 8
+        val artWidth = width - (artLeft * 2)
+        val artHeight = (height * 0.44f).toInt()
 
-        // Render Card Illustration into Art Window
-        val artPixels = artPixelsOverride ?: renderCardArtwork(card, artWidth, artHeight)
+        // Double-beveled frame (Bronze / Gold outer, dark inner recess)
+        drawRect(pixels, width, artLeft - 3, artTop - 3, artWidth + 6, artHeight + 6, 0xFF1C2230.toInt())
+        drawRectBorder(pixels, width, artLeft - 3, artTop - 3, artWidth + 6, artHeight + 6, 0xFFD4AF37.toInt())
+        drawRectBorder(pixels, width, artLeft - 1, artTop - 1, artWidth + 2, artHeight + 2, 0xFF0B0E14.toInt())
+
+        // Render Card Illustration into Art Window with aspect-preserving sampling
+        val baseSpritePixels = artPixelsOverride ?: renderCardArtwork(card, 64, 64)
         for (ay in 0 until artHeight) {
+            val srcY = ((ay.toFloat() / artHeight) * 64).toInt().coerceIn(0, 63)
             for (ax in 0 until artWidth) {
+                val srcX = ((ax.toFloat() / artWidth) * 64).toInt().coerceIn(0, 63)
+                val srcColor = baseSpritePixels[srcY * 64 + srcX]
                 val px = artLeft + ax
                 val py = artTop + ay
-                if (px in 0 until width && py in 0 until height && ay * artWidth + ax < artPixels.size) {
-                    pixels[py * width + px] = artPixels[ay * artWidth + ax]
+                if (px in 0 until width && py in 0 until height) {
+                    pixels[py * width + px] = srcColor
                 }
             }
         }
 
-        // 6. Text Box (Parchment/Spell/Trap)
-        val textTop = artTop + artHeight + 5
-        val textHeight = height - textTop - 8
-        val textLeft = 10
-        val textWidth = width - 20
-        drawRect(pixels, width, textLeft, textTop, textWidth, textHeight, textBoxBg)
-        drawRectBorder(pixels, width, textLeft, textTop, textWidth, textHeight, COLOR_CARD_BORDER_OUTER)
-
-        // Text Box Header (Monster Type or Card Type)
-        val typeBarHeight = 11
-        drawRect(pixels, width, textLeft + 2, textTop + 2, textWidth - 4, typeBarHeight, 0x22000000)
-
-        // ATK / DEF Display Bar at bottom of text box for monsters
-        if (card.isMonster) {
-            val statTop = textTop + textHeight - 14
-            drawRect(pixels, width, textLeft + 2, statTop, textWidth - 4, 12, 0x33000000)
-            // Visual divider for stats
-            drawLine(pixels, width, textLeft + (textWidth / 2), statTop + 1, textLeft + (textWidth / 2), statTop + 11, 0xFF785B28.toInt())
-            // Red ATK dot
-            drawCircle(pixels, width, textLeft + 8, statTop + 6, 2, 0xFFDC2626.toInt())
-            // Blue DEF dot
-            drawCircle(pixels, width, textLeft + (textWidth / 2) + 8, statTop + 6, 2, 0xFF2563EB.toInt())
+        // Holographic Shimmer / Prismatic Rainbow Sheen for Ultra Rare Cards
+        val isUltraRare = card.level >= 7 || card.name in ULTRA_RARE_CARDS
+        if (isUltraRare) {
+            for (ay in 0 until artHeight) {
+                for (ax in 0 until artWidth) {
+                    val px = artLeft + ax
+                    val py = artTop + ay
+                    val diag = (ax + ay) % 20
+                    if (diag in 0..3) {
+                        val sheen = (20 - (abs(diag - 1.5f) * 10)).toInt()
+                        val orig = pixels[py * width + px]
+                        val r = (((orig shr 16) and 0xFF) + sheen).coerceIn(0, 255)
+                        val g = (((orig shr 8) and 0xFF) + (sheen * 0.8f).toInt()).coerceIn(0, 255)
+                        val b = (((orig) and 0xFF) + (sheen * 1.3f).toInt()).coerceIn(0, 255)
+                        pixels[py * width + px] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                    }
+                }
+            }
         }
 
-        // 7. Hologram Foil Stamp (Bottom-Right)
+        // 6. Text / Lore Box (Parchment/Spell/Trap)
+        val textTop = artTop + artHeight + 4
+        val textLeft = borderWidth + 4
+        val textWidth = width - (textLeft * 2)
+        val textHeight = height - textTop - borderWidth - 4
+
+        // Ancient papyrus texture fill
+        for (ty in textTop until (textTop + textHeight)) {
+            val vNoise = (((ty * 13) xor (textWidth * 7)) % 9) - 4
+            val baseR = (((textBoxBg shr 16) and 0xFF) + vNoise).coerceIn(0, 255)
+            val baseG = (((textBoxBg shr 8) and 0xFF) + vNoise).coerceIn(0, 255)
+            val baseB = ((textBoxBg and 0xFF) + vNoise).coerceIn(0, 255)
+            val rowCol = (0xFF shl 24) or (baseR shl 16) or (baseG shl 8) or baseB
+            for (tx in textLeft until (textLeft + textWidth)) {
+                pixels[ty * width + tx] = rowCol
+            }
+        }
+        drawRectBorder(pixels, width, textLeft, textTop, textWidth, textHeight, 0xFF4A3525.toInt())
+        drawRectBorder(pixels, width, textLeft + 1, textTop + 1, textWidth - 2, textHeight - 2, 0xFF8B6B4C.toInt())
+
+        // Lore Box Header Tag (Monster Type or Card Type)
+        val typeTag = when {
+            card.isMonster -> {
+                val subtype = if (card.level >= 5 || card.name in ULTRA_RARE_CARDS) "EFFECT" else "NORMAL"
+                "[ ${card.monsterType.displayName.uppercase()} / $subtype ]"
+            }
+            card.isSpell -> "[ SPELL CARD ]"
+            card.isTrap -> "[ TRAP CARD ]"
+            else -> "[ CARD ]"
+        }
+        drawText3x5(pixels, width, textLeft + 4, textTop + 4, typeTag, 0xFF1C130B.toInt())
+
+        // Micro-script lore lines
+        val scriptLineY = textTop + 12
+        val maxLines = if (card.isMonster) 3 else 5
+        for (l in 0 until maxLines) {
+            val ly = scriptLineY + (l * 4)
+            if (ly < textTop + textHeight - 12) {
+                val lineLen = if (l == maxLines - 1) (textWidth * 0.65f).toInt() else (textWidth - 8)
+                for (lx in 4 until lineLen) {
+                    val px = textLeft + lx
+                    if ((lx % 5 != 0) && px in 0 until width && ly in 0 until height) {
+                        pixels[ly * width + px] = 0xFF5D432A.toInt()
+                    }
+                }
+            }
+        }
+
+        // 7. ATK / DEF Scoreboard Plate for Monsters
+        if (card.isMonster) {
+            val scorePlateH = 10
+            val scorePlateW = (textWidth * 0.72f).toInt().coerceAtLeast(70)
+            val scorePlateX = textLeft + textWidth - scorePlateW - 2
+            val scorePlateY = textTop + textHeight - scorePlateH - 2
+
+            drawRect(pixels, width, scorePlateX, scorePlateY, scorePlateW, scorePlateH, 0xFF181B24.toInt())
+            drawRectBorder(pixels, width, scorePlateX, scorePlateY, scorePlateW, scorePlateH, 0xFF6B7280.toInt())
+
+            val statStr = "ATK/${card.atk} DEF/${card.def}"
+            drawText3x5(pixels, width, scorePlateX + 3, scorePlateY + 3, statStr, 0xFFFFFFFF.toInt(), 0xFF000000.toInt())
+        }
+
+        // 8. Hologram Foil Square Stamp (Bottom-Right)
         val holoSize = 8
-        val holoX = width - 14
-        val holoY = height - 12
+        val holoX = width - borderWidth - 9
+        val holoY = height - borderWidth - 9
         drawRect(pixels, width, holoX, holoY, holoSize, holoSize, 0xFFF59E0B.toInt())
-        drawCircle(pixels, width, holoX + 3, holoY + 3, 2, 0xFFFFFFFF.toInt())
+        drawRectBorder(pixels, width, holoX, holoY, holoSize, holoSize, 0xFFD97706.toInt())
+        drawCircle(pixels, width, holoX + 4, holoY + 4, 2, 0xFFFFFFFF.toInt())
+        putPixel(pixels, width, height, holoX + 4, holoY + 4, 0xFF78350F.toInt())
 
         return pixels
     }
@@ -188,68 +302,112 @@ object CardArtRenderer {
      */
     fun renderGbaFullCard(
         card: Card,
-        width: Int = 128,
-        height: Int = 186,
+        width: Int = 144,
+        height: Int = 208,
         artPixelsOverride: IntArray? = null
     ): IntArray {
         val pixels = renderFullCard(card, width, height, artPixelsOverride)
         // Add metallic GBA holographic foil trim to borders
         val goldHighlight = 0xFFFDE047.toInt()
         val gbaTrim = 0xFFD4AF37.toInt()
-        for (x in 6 until width - 6) {
-            pixels[5 * width + x] = if (x % 2 == 0) goldHighlight else gbaTrim
-            pixels[(height - 6) * width + x] = gbaTrim
+        val borderWidth = (width * 0.035f).toInt().coerceAtLeast(4)
+
+        // Gold foil corner highlights
+        for (i in 0..4) {
+            putPixel(pixels, width, height, borderWidth + 1 + i, borderWidth + 1, goldHighlight)
+            putPixel(pixels, width, height, width - borderWidth - 2 - i, borderWidth + 1, goldHighlight)
+            putPixel(pixels, width, height, borderWidth + 1 + i, height - borderWidth - 2, goldHighlight)
+            putPixel(pixels, width, height, width - borderWidth - 2 - i, height - borderWidth - 2, goldHighlight)
+        }
+
+        // Top & bottom metallic accent lines
+        for (x in (borderWidth + 6) until (width - borderWidth - 6)) {
+            val c = if (x % 3 == 0) goldHighlight else gbaTrim
+            pixels[(borderWidth + 1) * width + x] = c
+            pixels[(height - borderWidth - 2) * width + x] = gbaTrim
         }
         return pixels
     }
 
     /**
-     * Authentic Yu-Gi-Oh! Card Back texture.
+     * Authentic Yu-Gi-Oh! Card Back texture with Millennium Eye emblem.
      */
-    fun renderCardBack(width: Int = 128, height: Int = 186): IntArray {
+    fun renderCardBack(width: Int = 144, height: Int = 208): IntArray {
         val pixels = IntArray(width * height)
         val outerBorder = 0xFF140D07.toInt()
         val brownBase = 0xFF5C2B14.toInt()
-        val blackCore = 0xFF0B0704.toInt()
+        val brownDark = 0xFF3D1A0B.toInt()
         val goldRing = 0xFFD4AF37.toInt()
+        val goldBright = 0xFFFDE047.toInt()
         val eyeOrange = 0xFFF97316.toInt()
+        val blackCore = 0xFF0A0704.toInt()
 
-        pixels.fill(brownBase)
-
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                if (x < 5 || x >= width - 5 || y < 5 || y >= height - 5) {
-                    pixels[y * width + x] = outerBorder
-                }
-            }
-        }
-
+        // 1. Swirled Mahogany base texture
         val cx = width / 2.0
         val cy = height / 2.0
-        val radiusX = width * 0.36
-        val radiusY = height * 0.36
+        val radiusX = width * 0.42
+        val radiusY = height * 0.42
 
         for (y in 0 until height) {
             for (x in 0 until width) {
                 val dx = (x - cx) / radiusX
                 val dy = (y - cy) / radiusY
                 val dist = dx * dx + dy * dy
-                if (dist <= 1.0) {
-                    val spiral = sin(dist * 12.0 + atan2(y - cy, x - cx) * 3.0)
-                    if (dist > 0.88) {
-                        pixels[y * width + x] = goldRing
-                    } else {
-                        val c = if (spiral > 0.2) 0xFF1A120B.toInt() else blackCore
-                        pixels[y * width + x] = c
-                    }
+                val angle = atan2(y - cy, x - cx)
+                val swirl = sin(dist * 14.0 + angle * 4.0)
+                val base = if (swirl > 0.0) brownBase else brownDark
+                pixels[y * width + x] = base
+            }
+        }
+
+        // 2. Beveled Outer Border
+        val borderWidth = (width * 0.038f).toInt().coerceAtLeast(4)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val isCorner = (x < 3 && y < 3) || (x >= width - 3 && y < 3) ||
+                               (x < 3 && y >= height - 3) || (x >= width - 3 && y >= height - 3)
+                if (isCorner) {
+                    pixels[y * width + x] = 0x00000000
+                } else if (x < borderWidth || x >= width - borderWidth || y < borderWidth || y >= height - borderWidth) {
+                    pixels[y * width + x] = outerBorder
+                } else if (x == borderWidth || x == width - borderWidth - 1 || y == borderWidth || y == height - borderWidth - 1) {
+                    pixels[y * width + x] = 0xFF351C0F.toInt()
                 }
             }
         }
 
-        drawCircle(pixels, width, cx.toInt(), cy.toInt(), 12, goldRing)
-        drawCircle(pixels, width, cx.toInt(), cy.toInt(), 9, blackCore)
-        drawCircle(pixels, width, cx.toInt(), cy.toInt(), 5, eyeOrange)
-        drawCircle(pixels, width, cx.toInt(), cy.toInt(), 2, 0xFF000000.toInt())
+        // 3. Central Cosmic Swirl & Dual Concentric Rings
+        val outerRingR = (min(width, height) * 0.35).toInt()
+        val innerRingR = (min(width, height) * 0.28).toInt()
+        val coreVoidR = (min(width, height) * 0.20).toInt()
+
+        // Dark void portal
+        drawCircle(pixels, width, cx.toInt(), cy.toInt(), outerRingR, 0xFF140C07.toInt())
+        drawCircle(pixels, width, cx.toInt(), cy.toInt(), coreVoidR, blackCore)
+
+        // Outer & Inner concentric gold rings
+        drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), outerRingR, goldRing)
+        drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), outerRingR - 1, goldBright)
+        drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), innerRingR, goldRing)
+        drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), coreVoidR, 0xFF78350F.toInt())
+
+        // 4. Authentic Millennium Eye Emblem in Center
+        val icx = cx.toInt()
+        val icy = cy.toInt()
+        val eyeW = (min(width, height) * 0.12).toInt().coerceAtLeast(10)
+
+        // Golden eye arch
+        drawCircle(pixels, width, icx, icy, eyeW, goldRing)
+        drawCircle(pixels, width, icx, icy, eyeW - 2, blackCore)
+        // Radiant iris & pupil
+        drawCircle(pixels, width, icx, icy, (eyeW * 0.6).toInt(), eyeOrange)
+        drawCircle(pixels, width, icx, icy, (eyeW * 0.3).toInt(), 0xFF000000.toInt())
+        putPixel(pixels, width, height, icx - 1, icy - 1, 0xFFFFFFFF.toInt())
+
+        // Millennium Eye classic eyeliner lashes
+        drawLine(pixels, width, icx - eyeW, icy, icx - eyeW - 3, icy - 2, goldRing)
+        drawLine(pixels, width, icx + eyeW, icy, icx + eyeW + 3, icy - 2, goldRing)
+        drawLine(pixels, width, icx, icy + eyeW, icx, icy + eyeW + 4, goldRing)
 
         return pixels
     }
@@ -2115,5 +2273,80 @@ object CardArtRenderer {
         val g = (((color shr 8) and 0xFF) + amount).coerceIn(0, 255)
         val b = ((color and 0xFF) + amount).coerceIn(0, 255)
         return (a shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
+    private val FONT_3X5: Map<Char, IntArray> = mapOf(
+        '0' to intArrayOf(0b111, 0b101, 0b101, 0b101, 0b111),
+        '1' to intArrayOf(0b010, 0b110, 0b010, 0b010, 0b111),
+        '2' to intArrayOf(0b111, 0b001, 0b111, 0b100, 0b111),
+        '3' to intArrayOf(0b111, 0b001, 0b111, 0b001, 0b111),
+        '4' to intArrayOf(0b101, 0b101, 0b111, 0b001, 0b001),
+        '5' to intArrayOf(0b111, 0b100, 0b111, 0b001, 0b111),
+        '6' to intArrayOf(0b111, 0b100, 0b111, 0b101, 0b111),
+        '7' to intArrayOf(0b111, 0b001, 0b010, 0b010, 0b010),
+        '8' to intArrayOf(0b111, 0b101, 0b111, 0b101, 0b111),
+        '9' to intArrayOf(0b111, 0b101, 0b111, 0b001, 0b111),
+        'A' to intArrayOf(0b010, 0b101, 0b111, 0b101, 0b101),
+        'B' to intArrayOf(0b110, 0b101, 0b110, 0b101, 0b110),
+        'C' to intArrayOf(0b011, 0b100, 0b100, 0b100, 0b011),
+        'D' to intArrayOf(0b110, 0b101, 0b101, 0b101, 0b110),
+        'E' to intArrayOf(0b111, 0b100, 0b110, 0b100, 0b111),
+        'F' to intArrayOf(0b111, 0b100, 0b110, 0b100, 0b100),
+        'G' to intArrayOf(0b011, 0b100, 0b101, 0b101, 0b011),
+        'H' to intArrayOf(0b101, 0b101, 0b111, 0b101, 0b101),
+        'I' to intArrayOf(0b111, 0b010, 0b010, 0b010, 0b111),
+        'J' to intArrayOf(0b001, 0b001, 0b001, 0b101, 0b010),
+        'K' to intArrayOf(0b101, 0b110, 0b100, 0b110, 0b101),
+        'L' to intArrayOf(0b100, 0b100, 0b100, 0b100, 0b111),
+        'M' to intArrayOf(0b101, 0b111, 0b101, 0b101, 0b101),
+        'N' to intArrayOf(0b110, 0b101, 0b101, 0b101, 0b101),
+        'O' to intArrayOf(0b010, 0b101, 0b101, 0b101, 0b010),
+        'P' to intArrayOf(0b110, 0b101, 0b110, 0b100, 0b100),
+        'Q' to intArrayOf(0b010, 0b101, 0b101, 0b110, 0b011),
+        'R' to intArrayOf(0b110, 0b101, 0b110, 0b101, 0b101),
+        'S' to intArrayOf(0b011, 0b100, 0b010, 0b001, 0b110),
+        'T' to intArrayOf(0b111, 0b010, 0b010, 0b010, 0b010),
+        'U' to intArrayOf(0b101, 0b101, 0b101, 0b101, 0b111),
+        'V' to intArrayOf(0b101, 0b101, 0b101, 0b101, 0b010),
+        'W' to intArrayOf(0b101, 0b101, 0b101, 0b111, 0b101),
+        'X' to intArrayOf(0b101, 0b101, 0b010, 0b101, 0b101),
+        'Y' to intArrayOf(0b101, 0b101, 0b010, 0b010, 0b010),
+        'Z' to intArrayOf(0b111, 0b001, 0b010, 0b100, 0b111),
+        '/' to intArrayOf(0b001, 0b010, 0b010, 0b010, 0b100),
+        '-' to intArrayOf(0b000, 0b000, 0b111, 0b000, 0b000),
+        '[' to intArrayOf(0b110, 0b100, 0b100, 0b100, 0b110),
+        ']' to intArrayOf(0b011, 0b001, 0b001, 0b001, 0b011),
+        '.' to intArrayOf(0b000, 0b000, 0b000, 0b000, 0b010),
+        ':' to intArrayOf(0b000, 0b010, 0b000, 0b010, 0b000),
+        '\'' to intArrayOf(0b010, 0b010, 0b000, 0b000, 0b000),
+        ' ' to intArrayOf(0b000, 0b000, 0b000, 0b000, 0b000)
+    )
+
+    fun drawText3x5(pixels: IntArray, w: Int, startX: Int, startY: Int, text: String, color: Int, shadowColor: Int? = null) {
+        val h = pixels.size / w
+        var curX = startX
+        val upper = text.uppercase()
+        for (ch in upper) {
+            val glyph = FONT_3X5[ch] ?: FONT_3X5[' ']!!
+            if (shadowColor != null) {
+                for (r in 0 until 5) {
+                    val bits = glyph[r]
+                    for (c in 0 until 3) {
+                        if ((bits and (1 shl (2 - c))) != 0) {
+                            putPixel(pixels, w, h, curX + c + 1, startY + r + 1, shadowColor)
+                        }
+                    }
+                }
+            }
+            for (r in 0 until 5) {
+                val bits = glyph[r]
+                for (c in 0 until 3) {
+                    if ((bits and (1 shl (2 - c))) != 0) {
+                        putPixel(pixels, w, h, curX + c, startY + r, color)
+                    }
+                }
+            }
+            curX += 4
+        }
     }
 }
