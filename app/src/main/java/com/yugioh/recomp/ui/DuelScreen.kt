@@ -16,8 +16,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,6 +31,7 @@ import com.yugioh.recomp.core.audio.ChiptuneSynthesizer
 import com.yugioh.recomp.core.engine.*
 import com.yugioh.recomp.core.rom.RomAssetCache
 import com.yugioh.recomp.ui.theme.*
+import kotlin.math.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -71,7 +74,28 @@ fun DuelScreen(
     var playerFloatingDamage by remember { mutableStateOf<Int?>(null) }
     var opponentFloatingDamage by remember { mutableStateOf<Int?>(null) }
     var animatingSummonSlot by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
+    var cardDestructionSlot by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var activeAttackRay by remember { mutableStateOf<AttackRayState?>(null) }
+    var screenShakeOffsetX by remember { mutableStateOf(0f) }
+    var screenShakeOffsetY by remember { mutableStateOf(0f) }
+
+    fun triggerScreenShake(intensity: Float = 12f) {
+        coroutineScope.launch {
+            val offsets = listOf(
+                Pair(intensity, -intensity * 0.7f),
+                Pair(-intensity, intensity * 0.8f),
+                Pair(intensity * 0.6f, -intensity * 0.5f),
+                Pair(-intensity * 0.4f, intensity * 0.3f),
+                Pair(intensity * 0.2f, -intensity * 0.1f),
+                Pair(0f, 0f)
+            )
+            for (offset in offsets) {
+                screenShakeOffsetX = offset.first
+                screenShakeOffsetY = offset.second
+                delay(35)
+            }
+        }
+    }
 
     fun playSfx(type: String) {
         val sfx = when (type) {
@@ -79,6 +103,8 @@ fun DuelScreen(
             "summon" -> ChiptuneSynthesizer.createSummonSfx()
             "attack" -> ChiptuneSynthesizer.createAttackClashSfx()
             "damage" -> ChiptuneSynthesizer.createDamageTickSfx()
+            "destroy" -> ChiptuneSynthesizer.createCardDestructionSfx()
+            "direct" -> ChiptuneSynthesizer.createDirectAttackSfx()
             "victory" -> ChiptuneSynthesizer.createVictoryFanfare()
             else -> ChiptuneSynthesizer.createCardDrawSfx()
         }
@@ -163,7 +189,7 @@ fun DuelScreen(
                         animatingSummonSlot = Pair(false, step.slotIndex)
                         engine.executeAiStep(step)
                         refresh()
-                        delay(1200)
+                        delay(1100)
                         animatingSummonSlot = null
                     }
                     is AiTurnStep.DeclareAttack -> {
@@ -176,15 +202,30 @@ fun DuelScreen(
                             toSlot = step.defenderSlot,
                             isDirect = step.isDirect
                         )
-                        playSfx("attack")
-                        delay(500)
+                        playSfx(if (step.isDirect) "direct" else "attack")
+                        delay(400)
+                        triggerScreenShake(if (step.isDirect) 16f else 12f)
+                        val defenderSlot = step.defenderSlot
+                        val prevDefender = defenderSlot?.let { engine.player.monsterZones[it] }
+                        val prevAttacker = engine.opponent.monsterZones[step.attackerSlot]
+
                         engine.executeAiStep(step)
                         refresh()
+
+                        if (defenderSlot != null && prevDefender != null && engine.player.monsterZones[defenderSlot] == null) {
+                            cardDestructionSlot = Pair(true, defenderSlot)
+                            playSfx("destroy")
+                        }
+                        if (prevAttacker != null && engine.opponent.monsterZones[step.attackerSlot] == null) {
+                            cardDestructionSlot = Pair(false, step.attackerSlot)
+                            playSfx("destroy")
+                        }
+
                         if (step.predictedDamage > 0) {
                             playerFloatingDamage = step.predictedDamage
-                            playSfx("damage")
                         }
-                        delay(1200)
+                        delay(900)
+                        cardDestructionSlot = null
                         activeAttackRay = null
                         playerFloatingDamage = null
                     }
@@ -229,6 +270,7 @@ fun DuelScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .offset(x = screenShakeOffsetX.dp, y = screenShakeOffsetY.dp)
             .background(DarkFieldBackground)
             .statusBarsPadding()
             .navigationBarsPadding()
@@ -255,61 +297,82 @@ fun DuelScreen(
                 currentPhase = engine.currentPhase,
                 canDirectAttack = canDirectAttack,
                 animatingSummonSlot = animatingSummonSlot,
+                cardDestructionSlot = cardDestructionSlot,
                 floatingDamage = opponentFloatingDamage,
                 isShaderEnabled = isShaderEnabled,
+                onDamageTick = { playSfx("damage") },
                 onToggleShader = {
                     isShaderEnabled = !isShaderEnabled
                     DdsCampaignManager.isGbcLcdShaderEnabled = isShaderEnabled
                 },
                 onOpponentMonsterClick = { slotIdx ->
                     if (!isAiExecuting && engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && selectedPlayerMonsterSlot != null) {
+                        val playerSlot = selectedPlayerMonsterSlot!!
                         activeAttackRay = AttackRayState(
                             fromPlayer = true,
-                            fromSlot = selectedPlayerMonsterSlot!!,
+                            fromSlot = playerSlot,
                             toSlot = slotIdx,
                             isDirect = false
                         )
                         playSfx("attack")
                         val prevOppLp = engine.opponent.lifePoints
-                        engine.declareAttack(selectedPlayerMonsterSlot!!, slotIdx)
+                        val prevOppMon = engine.opponent.monsterZones[slotIdx]
+                        val prevPlayerMon = engine.player.monsterZones[playerSlot]
                         selectedPlayerMonsterSlot = null
-                        val dmg = (prevOppLp - engine.opponent.lifePoints).coerceAtLeast(0)
-                        if (dmg > 0) {
-                            opponentFloatingDamage = dmg
-                            playSfx("damage")
-                        }
-                        refresh()
+
                         coroutineScope.launch {
-                            delay(1000)
+                            delay(350)
+                            triggerScreenShake(14f)
+                            engine.declareAttack(playerSlot, slotIdx)
+                            refresh()
+
+                            if (prevOppMon != null && engine.opponent.monsterZones[slotIdx] == null) {
+                                cardDestructionSlot = Pair(false, slotIdx)
+                                playSfx("destroy")
+                            }
+                            if (prevPlayerMon != null && engine.player.monsterZones[playerSlot] == null) {
+                                cardDestructionSlot = Pair(true, playerSlot)
+                                playSfx("destroy")
+                            }
+
+                            val dmg = (prevOppLp - engine.opponent.lifePoints).coerceAtLeast(0)
+                            if (dmg > 0) {
+                                opponentFloatingDamage = dmg
+                            }
+
+                            delay(700)
+                            cardDestructionSlot = null
                             activeAttackRay = null
                             autoTargetNextAttacker()
-                            delay(800)
+                            delay(600)
                             opponentFloatingDamage = null
                         }
                     }
                 },
                 onDirectAttack = {
                     if (canDirectAttack && selectedPlayerMonsterSlot != null) {
-                        val dmg = engine.player.monsterZones[selectedPlayerMonsterSlot!!]?.card?.atk ?: 0
-                        playSfx("attack")
+                        val playerSlot = selectedPlayerMonsterSlot!!
+                        val dmg = engine.player.monsterZones[playerSlot]?.card?.atk ?: 0
+                        playSfx("direct")
                         activeAttackRay = AttackRayState(
                             fromPlayer = true,
-                            fromSlot = selectedPlayerMonsterSlot!!,
+                            fromSlot = playerSlot,
                             toSlot = null,
                             isDirect = true
                         )
-                        engine.declareAttack(selectedPlayerMonsterSlot!!, null)
                         selectedPlayerMonsterSlot = null
-                        if (dmg > 0) {
-                            opponentFloatingDamage = dmg
-                            playSfx("damage")
-                        }
-                        refresh()
                         coroutineScope.launch {
-                            delay(1000)
+                            delay(400)
+                            triggerScreenShake(18f)
+                            engine.declareAttack(playerSlot, null)
+                            if (dmg > 0) {
+                                opponentFloatingDamage = dmg
+                            }
+                            refresh()
+                            delay(750)
                             activeAttackRay = null
                             autoTargetNextAttacker()
-                            delay(800)
+                            delay(600)
                             opponentFloatingDamage = null
                         }
                     }
@@ -387,7 +450,9 @@ fun DuelScreen(
                 currentPhase = engine.currentPhase,
                 isPlayerTurn = engine.isPlayerTurn,
                 animatingSummonSlot = animatingSummonSlot,
+                cardDestructionSlot = cardDestructionSlot,
                 floatingDamage = playerFloatingDamage,
+                onDamageTick = { playSfx("damage") },
                 onMonsterZoneClick = { slotIdx ->
                     if (!isAiExecuting) {
                         if (selectedCard != null && selectedCardHandIndex != null) {
@@ -577,8 +642,10 @@ private fun OpponentSection(
     currentPhase: DuelPhase,
     canDirectAttack: Boolean,
     animatingSummonSlot: Pair<Boolean, Int>?,
+    cardDestructionSlot: Pair<Boolean, Int>?,
     floatingDamage: Int?,
     isShaderEnabled: Boolean,
+    onDamageTick: () -> Unit,
     onToggleShader: () -> Unit,
     onOpponentMonsterClick: (Int) -> Unit,
     onDirectAttack: () -> Unit,
@@ -665,12 +732,10 @@ private fun OpponentSection(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "${opponent.lifePoints}",
-                            color = if (opponent.lifePoints > 2000) LifePointGreen else AttackRed,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
-                            fontFamily = FontFamily.Monospace
+                        RollingLifePointsCounter(
+                            targetLp = opponent.lifePoints,
+                            isOpponent = true,
+                            onDamageTick = onDamageTick
                         )
                         FloatingDamageText(damage = floatingDamage)
                     }
@@ -737,12 +802,17 @@ private fun OpponentSection(
                         !animatingSummonSlot.first &&
                         animatingSummonSlot.second == slot
 
+                    val isDestructionAnim = cardDestructionSlot != null &&
+                        !cardDestructionSlot.first &&
+                        cardDestructionSlot.second == slot
+
                     ZoneSlot(
                         duelCard = mCard,
                         isSpellTrap = false,
                         isOpponent = true,
                         highlighted = isTargetable,
                         isSummonAnimating = isSummonAnim,
+                        isDestructionAnimating = isDestructionAnim,
                         onClick = {
                             if (mCard != null) {
                                 onSelectOpponentSlot(slot)
@@ -976,7 +1046,9 @@ private fun PlayerSection(
     currentPhase: DuelPhase,
     isPlayerTurn: Boolean,
     animatingSummonSlot: Pair<Boolean, Int>?,
+    cardDestructionSlot: Pair<Boolean, Int>?,
     floatingDamage: Int?,
+    onDamageTick: () -> Unit,
     onMonsterZoneClick: (Int) -> Unit,
     onSpellZoneClick: (Int) -> Unit,
     onInspectCard: (Card) -> Unit,
@@ -1003,6 +1075,10 @@ private fun PlayerSection(
                         animatingSummonSlot.first &&
                         animatingSummonSlot.second == slot
 
+                    val isDestructionAnim = cardDestructionSlot != null &&
+                        cardDestructionSlot.first &&
+                        cardDestructionSlot.second == slot
+
                     ZoneSlot(
                         duelCard = mCard,
                         isSpellTrap = false,
@@ -1010,6 +1086,7 @@ private fun PlayerSection(
                         highlighted = isAttackerSelected || isEligibleSummonSlot,
                         isAttackingSource = isAttackerSelected,
                         isSummonAnimating = isSummonAnim,
+                        isDestructionAnimating = isDestructionAnim,
                         onClick = { onMonsterZoneClick(slot) },
                         onLongClick = { mCard?.card?.let { onInspectCard(it) } }
                     )
@@ -1098,12 +1175,10 @@ private fun PlayerSection(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "${player.lifePoints}",
-                            color = if (player.lifePoints > 2000) LifePointGreen else AttackRed,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
-                            fontFamily = FontFamily.Monospace
+                        RollingLifePointsCounter(
+                            targetLp = player.lifePoints,
+                            isOpponent = false,
+                            onDamageTick = onDamageTick
                         )
                         FloatingDamageText(damage = floatingDamage)
                     }
@@ -1445,6 +1520,7 @@ private fun ZoneSlot(
     highlighted: Boolean,
     isAttackingSource: Boolean = false,
     isSummonAnimating: Boolean = false,
+    isDestructionAnimating: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
@@ -1462,7 +1538,7 @@ private fun ZoneSlot(
         else -> Color(0xFF0F1A15)
     }
 
-    val scale = if (isSummonAnimating) 1.12f else 1.0f
+    val scale = if (isSummonAnimating) 1.15f else 1.0f
 
     Box(
         modifier = Modifier
@@ -1493,6 +1569,7 @@ private fun ZoneSlot(
                     Image(
                         bitmap = cardBackBitmap,
                         contentDescription = "Facedown Card",
+                        filterQuality = FilterQuality.None,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
@@ -1525,6 +1602,7 @@ private fun ZoneSlot(
                     Image(
                         bitmap = cardBitmap,
                         contentDescription = card.name,
+                        filterQuality = FilterQuality.None,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
@@ -1569,6 +1647,7 @@ private fun ZoneSlot(
                     Image(
                         bitmap = cardBitmap,
                         contentDescription = card.name,
+                        filterQuality = FilterQuality.None,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
@@ -1614,6 +1693,16 @@ private fun ZoneSlot(
                 )
             }
         }
+
+        // Golden Summoning Portal overlay animation
+        if (isSummonAnimating) {
+            GoldenSummonPortal(modifier = Modifier.fillMaxSize())
+        }
+
+        // Explosive Card Destruction Burst overlay animation
+        if (isDestructionAnimating) {
+            CardDestructionBurst(modifier = Modifier.fillMaxSize())
+        }
     }
 }
 
@@ -1649,6 +1738,7 @@ private fun HandCardItem(
             Image(
                 bitmap = fullCardBitmap,
                 contentDescription = card.name,
+                filterQuality = FilterQuality.None,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(2.dp)
@@ -1800,32 +1890,257 @@ private fun AiActionAnnouncementOverlay(
 private fun AttackRayOverlay(
     ray: AttackRayState
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "ray")
-    val rayAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
+    val infiniteTransition = rememberInfiniteTransition(label = "rayAnim")
+    val beamPulse by infiniteTransition.animateFloat(
+        initialValue = 0.7f,
         targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(250), RepeatMode.Reverse),
-        label = "rayAlpha"
+        animationSpec = infiniteRepeatable(tween(180), RepeatMode.Reverse),
+        label = "beamPulse"
+    )
+    val shockwaveScale by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.6f,
+        animationSpec = infiniteRepeatable(tween(350), RepeatMode.Reverse),
+        label = "shockwave"
     )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(50.dp),
+            .height(56.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val startY = if (ray.fromPlayer) size.height else 0f
             val endY = if (ray.fromPlayer) 0f else size.height
+            val midX = size.width * 0.5f
+
+            // Radiant Outer Energy Beam
             drawLine(
-                brush = Brush.linearGradient(listOf(AttackRed, MillenniumGold, Color.White)),
-                start = androidx.compose.ui.geometry.Offset(size.width * 0.5f, startY),
-                end = androidx.compose.ui.geometry.Offset(size.width * 0.5f, endY),
-                strokeWidth = 5.dp.toPx() * rayAlpha
+                color = Color(0x66FFD700),
+                start = androidx.compose.ui.geometry.Offset(midX, startY),
+                end = androidx.compose.ui.geometry.Offset(midX, endY),
+                strokeWidth = 18.dp.toPx() * beamPulse
+            )
+
+            // Lightning Core Beam
+            drawLine(
+                brush = Brush.linearGradient(
+                    listOf(
+                        Color(0xFFEF4444),
+                        Color(0xFFFFD700),
+                        Color(0xFFFFFFFF),
+                        Color(0xFFFFD700),
+                        Color(0xFFEF4444)
+                    )
+                ),
+                start = androidx.compose.ui.geometry.Offset(midX, startY),
+                end = androidx.compose.ui.geometry.Offset(midX, endY),
+                strokeWidth = 8.dp.toPx() * beamPulse
+            )
+
+            // Impact Shockwave at center clash point
+            drawCircle(
+                color = Color(0xFFFFD700).copy(alpha = 0.8f),
+                radius = 16.dp.toPx() * shockwaveScale,
+                center = androidx.compose.ui.geometry.Offset(midX, size.height * 0.5f),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
             )
         }
-        Text("⚡ 💥 ⚔", fontSize = 24.sp)
+
+        // Animated Clashing Blades Emblem
+        Surface(
+            color = Color(0xEE1E0B0B),
+            shape = CircleShape,
+            modifier = Modifier
+                .size(36.dp)
+                .border(2.dp, AttackRed, CircleShape)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = "⚔",
+                    color = Color(0xFFFEF08A),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+        }
     }
+}
+
+// =========================================================================
+// GOLDEN MILLENNIUM SUMMONING PORTAL
+// =========================================================================
+@Composable
+private fun GoldenSummonPortal(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "summonRune")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
+        label = "rot"
+    )
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(tween(350, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse"
+    )
+
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val r = (min(size.width, size.height) / 2f) * pulseScale
+
+            // Glowing Golden Portal Aura
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFFEF08A), Color(0xFFF59E0B), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(cx, cy),
+                    radius = r * 1.4f
+                ),
+                radius = r * 1.4f,
+                center = androidx.compose.ui.geometry.Offset(cx, cy)
+            )
+
+            // Inner Millennium Circle
+            drawCircle(
+                color = Color(0xFFFFD700),
+                radius = r * 0.85f,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+            )
+
+            // Millennium Star Rays
+            val numRays = 8
+            for (i in 0 until numRays) {
+                val rad = (i * (Math.PI / 4.0) + Math.toRadians(rotation.toDouble()))
+                val rx = (cx + cos(rad) * r * 0.9f).toFloat()
+                val ry = (cy + sin(rad) * r * 0.9f).toFloat()
+                drawLine(
+                    color = Color(0xFFFFFBEB),
+                    start = androidx.compose.ui.geometry.Offset(cx, cy),
+                    end = androidx.compose.ui.geometry.Offset(rx, ry),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+        }
+    }
+}
+
+// =========================================================================
+// CARD DESTRUCTION EXPLOSIVE BURST
+// =========================================================================
+@Composable
+private fun CardDestructionBurst(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "burst")
+    val burstScale by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 2.2f,
+        animationSpec = infiniteRepeatable(tween(450, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "burstScale"
+    )
+    val burstAlpha by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(tween(450, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "burstAlpha"
+    )
+
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val r = (min(size.width, size.height) / 2f) * burstScale
+
+            // Expanding Fiery Shockwave
+            drawCircle(
+                color = Color(0xFFEF4444).copy(alpha = burstAlpha),
+                radius = r,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx())
+            )
+            drawCircle(
+                color = Color(0xFFFDE047).copy(alpha = burstAlpha),
+                radius = r * 0.6f,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+            )
+
+            // Exploding Card Shards / Debris
+            val numShards = 12
+            for (i in 0 until numShards) {
+                val ang = i * (Math.PI * 2 / numShards)
+                val sx = (cx + cos(ang) * r * 0.85f).toFloat()
+                val sy = (cy + sin(ang) * r * 0.85f).toFloat()
+                drawCircle(
+                    color = Color(0xFFF97316).copy(alpha = burstAlpha),
+                    radius = 3.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(sx, sy)
+                )
+            }
+        }
+    }
+}
+
+// =========================================================================
+// ANIMATED ROLLING LIFE POINTS COUNTER
+// =========================================================================
+@Composable
+private fun RollingLifePointsCounter(
+    targetLp: Int,
+    isOpponent: Boolean,
+    onDamageTick: () -> Unit = {}
+) {
+    var displayLp by remember { mutableStateOf(targetLp) }
+    var isDecrementing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(targetLp) {
+        if (targetLp != displayLp) {
+            val startLp = displayLp
+            val diff = targetLp - startLp
+            if (diff < 0) {
+                isDecrementing = true
+                val steps = min(20, max(5, abs(diff) / 50))
+                val stepDelay = 650L / steps
+                for (i in 1..steps) {
+                    val current = startLp + (diff * i / steps)
+                    displayLp = current
+                    onDamageTick()
+                    delay(stepDelay)
+                }
+                displayLp = targetLp
+                isDecrementing = false
+            } else {
+                displayLp = targetLp
+            }
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "lpPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = if (isDecrementing) 1.22f else 1.0f,
+        animationSpec = infiniteRepeatable(tween(120), RepeatMode.Reverse),
+        label = "pulse"
+    )
+
+    Text(
+        text = "$displayLp",
+        color = when {
+            isDecrementing -> Color(0xFFEF4444) // Bright red flash while taking damage
+            displayLp > 2000 -> LifePointGreen
+            else -> AttackRed
+        },
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        fontSize = if (isOpponent) 15.sp else 16.sp,
+        modifier = Modifier.scale(if (isDecrementing) pulseScale else 1.0f)
+    )
 }
 
 // =========================================================================

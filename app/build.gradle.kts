@@ -8,11 +8,11 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.dueldecomp.app"
+        applicationId = "com.yugioh.recomp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.4.0"
+        versionCode = 6
+        versionName = "1.5.0"
         setProperty("archivesBaseName", "Duel-decomp")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
