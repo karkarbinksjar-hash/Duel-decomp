@@ -29,23 +29,37 @@ object RomAssetCache {
         cardFullTextures.clear()
         activeTarget = target
 
-        // 1. Extract Cards directly from user-supplied ROM bytes
-        val cards = DdsRomParser.extractCardsFromRom(romBytes)
-        for (card in cards) {
-            cardDatabase[card.id] = card
+        if (target.platform == RomPlatform.GBA) {
+            // GBA EXPANSION PIPELINE: The Eternal Duelist Soul / Worldwide Edition (16-color 4bpp/8bpp)
+            val cards = GbaRomParser.extractCardsFromRom(romBytes)
+            for (card in cards) {
+                cardDatabase[card.id] = card
+            }
+
+            for (card in cards) {
+                val sprite = GbaRomParser.extractCardSpriteGba(romBytes, card, 64, 64)
+                cardArtSprites[card.id] = sprite
+
+                val fullPixels = CardArtRenderer.renderGbaFullCard(card, 96, 140)
+                cardFullTextures[card.id] = DecodedSprite(96, 140, fullPixels)
+            }
+        } else {
+            // GBC BASE PIPELINE: Dark Duel Stories (2bpp planar tiles)
+            val cards = DdsRomParser.extractCardsFromRom(romBytes)
+            for (card in cards) {
+                cardDatabase[card.id] = card
+            }
+
+            for (card in cards) {
+                val sprite = DdsRomParser.extractCardSprite(romBytes, card, 64, 64)
+                cardArtSprites[card.id] = sprite
+
+                val fullPixels = CardArtRenderer.renderFullCard(card, 96, 140)
+                cardFullTextures[card.id] = DecodedSprite(96, 140, fullPixels)
+            }
         }
 
-        // 2. Extract and decode 2bpp tiles with elemental palettes from ROM
-        for (card in cards) {
-            val sprite = DdsRomParser.extractCardSprite(romBytes, card, 64, 64)
-            cardArtSprites[card.id] = sprite
-
-            // Render complete Yu-Gi-Oh! card frame (96x140)
-            val fullPixels = CardArtRenderer.renderFullCard(card, 96, 140)
-            cardFullTextures[card.id] = DecodedSprite(96, 140, fullPixels)
-        }
-
-        // 3. Render Card Back
+        // Card Back
         val backPixels = CardArtRenderer.renderCardBack(96, 140)
         cardBackSprite = DecodedSprite(96, 140, backPixels)
 
@@ -64,15 +78,10 @@ object RomAssetCache {
             } else {
                 GbcTileDecoder.generateProceduralCardArt(cardId.toLong() * 41L, 64, 64)
             }
-            // Crisp integer-upscaled sprite
-            val upscaled = CardArtRenderer.upscaleSprite(pixels, 64, 64, scale = 2)
-            upscaled.also { cardArtSprites[cardId] = it }
+            DecodedSprite(64, 64, pixels).also { cardArtSprites[cardId] = it }
         }
     }
 
-    /**
-     * Returns a crisp 3x integer-upscaled retro sprite (192x192) for high-DPI display.
-     */
     fun getCardSpriteUpscaled(cardId: Int, scale: Int = 3): DecodedSprite {
         val baseSprite = getCardSprite(cardId)
         val card = getCard(cardId) ?: CardDataExtractor.getCanonicalDdsCardDatabase().firstOrNull { it.id == cardId }

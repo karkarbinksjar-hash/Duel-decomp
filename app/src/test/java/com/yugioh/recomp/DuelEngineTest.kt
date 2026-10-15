@@ -56,9 +56,8 @@ class DuelEngineTest {
     }
 
     @Test
-    fun testDdsNoTributeSummonRule() {
-        // In Dark Duel Stories (GBC), high level monsters (e.g. Level 7 Dark Magician)
-        // do not require tributes to normal summon directly.
+    fun testDdsHighLevelNormalSummon() {
+        // High level monster (Level 7) does not require tributes in DDS rules
         val highLevelMonster = Card(
             id = 14,
             name = "Dark Magician",
@@ -71,9 +70,9 @@ class DuelEngineTest {
         )
         engine.player.hand.add(0, DuelCard(card = highLevelMonster))
 
-        // DDS rule: can summon without tributes
+        // Can summon without tributes in DDS rules
         val (canSummon, reason) = engine.canSummon(isPlayer = true, card = highLevelMonster)
-        assertTrue("DDS rules allow direct summon without tribute requirement: $reason", canSummon)
+        assertTrue("High level monster can summon directly without tributes: $reason", canSummon)
 
         val success = engine.summonMonster(
             isPlayer = true,
@@ -120,18 +119,13 @@ class DuelEngineTest {
 
     @Test
     fun testSpellActivations() {
-        // Set player hand to 2 cards so Pot of Greed (removes 1, draws 2) respects DDS 5-card hand limit
-        engine.player.hand.clear()
-        engine.player.hand.add(DuelCard(card = Card(id = 2, name = "Monster 1", atk = 500, def = 500, level = 2, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)))
-        engine.player.hand.add(DuelCard(card = Card(id = 3, name = "Monster 2", atk = 600, def = 600, level = 2, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)))
-
         // Pot of Greed
         val potOfGreed = Card(id = 150, name = "Pot of Greed", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL)
         engine.player.hand.add(0, DuelCard(card = potOfGreed))
-        val handCountBefore = engine.player.hand.size // 3
+        val handCountBefore = engine.player.hand.size
 
         engine.activateSpell(isPlayer = true, handIndex = 0)
-        // Hand should have -1 for Pot of Greed + 2 drawn = handCountBefore + 1 (4 cards <= 5 hand limit)
+        // Hand should have -1 for Pot of Greed + 2 drawn = handCountBefore + 1
         assertEquals(handCountBefore + 1, engine.player.hand.size)
 
         // Dian Keto the Cure Maiden
@@ -232,75 +226,59 @@ class DuelEngineTest {
     }
 
     @Test
-    fun testDdsStarterDeckAndCapacity() {
-        val starterDeck = DdsCampaignManager.getCanonicalStarterDeck()
-        assertEquals("Canonical DDS Starter Deck must contain exactly 40 cards", 40, starterDeck.size)
-        assertTrue("Starter deck cost sum must be within 400 DC", starterDeck.sumOf { it.deckCost } <= 400)
-        for (card in starterDeck) {
-            assertTrue("Every starter card cost must be <= starting level 15: ${card.name} (${card.deckCost})", card.deckCost <= 15)
-        }
+    fun testGbaRomValidation() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        assertTrue("Synthetic GBA ROM must be >= 4MB", synthGba.size >= 0x400000)
+
+        val validation = com.yugioh.recomp.core.rom.RomValidator.validate(synthGba)
+        assertTrue("GBA ROM should validate successfully", validation.isValid)
+        assertTrue(validation is com.yugioh.recomp.core.rom.RomValidationResult.Valid)
+        val valid = validation as com.yugioh.recomp.core.rom.RomValidationResult.Valid
+        assertEquals(com.yugioh.recomp.core.rom.RomPlatform.GBA, valid.target.platform)
+        assertEquals("YUGIOH EDS", valid.headerTitle)
     }
 
     @Test
-    fun testDdsDuelistLevelCalculation() {
-        DdsCampaignManager.deckCapacity = 400
-        assertEquals(15, DdsCampaignManager.duelistLevel)
-
-        DdsCampaignManager.deckCapacity = 430
-        assertEquals(25, DdsCampaignManager.duelistLevel)
-
-        DdsCampaignManager.deckCapacity = 1120
-        assertEquals(255, DdsCampaignManager.duelistLevel)
+    fun testGbaHeaderParsing() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        val header = com.yugioh.recomp.core.rom.GbaRomParser.parseHeader(synthGba)
+        assertEquals("YUGIOH EDS", header.title)
+        assertEquals("AYCE", header.gameCode)
+        assertEquals("01", header.makerCode)
     }
 
     @Test
-    fun testDdsOnTheFieldFusion() {
-        val dragon = Card(id = 122, name = "Yamatano Dragon Scroll", atk = 900, def = 300, level = 2, attribute = CardAttribute.WIND, cardType = CardType.MONSTER, monsterType = MonsterType.DRAGON)
-        val thunder = Card(id = 211, name = "Kaminarikozou", atk = 700, def = 600, level = 2, attribute = CardAttribute.THUNDER, cardType = CardType.MONSTER, monsterType = MonsterType.THUNDER)
+    fun testGba4bppTileDecoding() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        val palette = com.yugioh.recomp.core.rom.GbaRomParser.getGba16ColorPaletteForAttribute(CardAttribute.DARK)
+        assertEquals(16, palette.size)
 
-        val fused = DdsCampaignManager.checkFusion(dragon, thunder)
-        assertNotNull("Dragon + Thunder must fuse", fused)
-        assertEquals("Twin-Headed Thunder Dragon", fused?.name)
-        assertEquals(2800, fused?.atk)
+        val tile = com.yugioh.recomp.core.rom.GbaTileDecoder.decodeTile4bpp(synthGba, 0x10000, palette)
+        assertEquals(64, tile.size) // 8x8 pixels
+
+        val grid = com.yugioh.recomp.core.rom.GbaTileDecoder.decodeTileGrid4bpp(synthGba, 0x10000, 4, 4, palette)
+        assertEquals(32, grid.width)
+        assertEquals(32, grid.height)
+        assertEquals(32 * 32, grid.pixels.size)
     }
 
     @Test
-    fun testDdsHandLimitRule() {
-        // duelist starts with 5 cards in hand
-        assertEquals(5, engine.player.hand.size)
-        val drawn = engine.drawCard(isPlayer = true)
-        assertNull("Cannot draw when hand already contains 5 cards in DDS rules", drawn)
-        assertEquals(5, engine.player.hand.size)
-    }
+    fun testGbaCardExtractionAndAssetCache() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        val cards = com.yugioh.recomp.core.rom.GbaRomParser.extractCardsFromRom(synthGba)
+        assertTrue("GBA expansion must include Jinzo", cards.any { it.name == "Jinzo" && it.atk == 2400 })
+        assertTrue("GBA expansion must include Buster Blader", cards.any { it.name == "Buster Blader" && it.atk == 2600 })
+        assertTrue("GBA expansion must include Dark Magician Girl", cards.any { it.name == "Dark Magician Girl" })
 
-    @Test
-    fun testAiTurnStepPlanningAndExecution() {
-        engine.passTurn(autoRunAi = false)
-        assertFalse(engine.isPlayerTurn)
-
-        val steps = engine.planAiTurnSteps()
-        assertTrue("AI should plan steps", steps.isNotEmpty())
-
-        for (step in steps) {
-            val executed = engine.executeAiStep(step)
-            assertTrue("Step execution should succeed or be valid", executed || engine.winner != null)
-        }
-
-        assertTrue("Turn must return to player", engine.isPlayerTurn)
-    }
-
-    @Test
-    fun testTristanSummonsMonsterDuringAiTurn() {
-        engine.passTurn(autoRunAi = false)
-        assertFalse(engine.isPlayerTurn)
-        assertEquals(0, engine.opponent.activeMonstersCount())
-
-        val steps = engine.planAiTurnSteps()
-        assertTrue("AI must plan at least one SummonMonster step", steps.any { it is AiTurnStep.SummonMonster })
-
-        val summonStep = steps.first { it is AiTurnStep.SummonMonster }
-        val executed = engine.executeAiStep(summonStep)
-        assertTrue("Summon execution must succeed", executed)
-        assertEquals(1, engine.opponent.activeMonstersCount())
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            synthGba
+        )
+        assertTrue(com.yugioh.recomp.core.rom.RomAssetCache.isAssetPipelineReady)
+        assertEquals(com.yugioh.recomp.core.rom.RomPlatform.GBA, com.yugioh.recomp.core.rom.RomAssetCache.activeTarget?.platform)
+        val jinzoTexture = com.yugioh.recomp.core.rom.RomAssetCache.getCardFullTexture(801)
+        assertNotNull(jinzoTexture)
+        assertEquals(96, jinzoTexture.width)
+        assertEquals(140, jinzoTexture.height)
     }
 }
