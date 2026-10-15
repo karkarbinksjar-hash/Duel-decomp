@@ -24,7 +24,9 @@ import androidx.compose.ui.unit.sp
 import com.yugioh.recomp.core.audio.ChiptuneSynthesizer
 import com.yugioh.recomp.core.engine.Card
 import com.yugioh.recomp.core.engine.DdsCampaignManager
+import com.yugioh.recomp.core.engine.GbaCampaignManager
 import com.yugioh.recomp.core.rom.RomAssetCache
+import com.yugioh.recomp.core.rom.RomPlatform
 import com.yugioh.recomp.ui.theme.*
 
 enum class DeckBuilderTab {
@@ -36,18 +38,20 @@ enum class DeckBuilderTab {
 fun DeckConstructionScreen(
     onNavigateBack: () -> Unit
 ) {
+    val isGba = RomAssetCache.activeTarget?.platform == RomPlatform.GBA
+
     var selectedTab by remember { mutableStateOf(DeckBuilderTab.ACTIVE_DECK) }
     var inspectingCard by remember { mutableStateOf<Card?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var updateCounter by remember { mutableStateOf(0) }
     fun refresh() { updateCounter++ }
 
-    val activeDeck = DdsCampaignManager.activeDeck
-    val trunk = DdsCampaignManager.trunk
-    val totalCost = DdsCampaignManager.totalDeckCost()
-    val maxDc = DdsCampaignManager.deckCapacity
-    val duelistLevel = DdsCampaignManager.duelistLevel
-    val isDeckValid = activeDeck.size == 40 && totalCost <= maxDc
+    val activeDeck = if (isGba) GbaCampaignManager.activeDeck else DdsCampaignManager.activeDeck
+    val trunk = if (isGba) GbaCampaignManager.trunk else DdsCampaignManager.trunk
+    val totalCost = if (isGba) 0 else DdsCampaignManager.totalDeckCost()
+    val maxDc = if (isGba) 0 else DdsCampaignManager.deckCapacity
+    val duelistLevel = if (isGba) 0 else DdsCampaignManager.duelistLevel
+    val isDeckValid = if (isGba) activeDeck.size in 40..60 else (activeDeck.size == 40 && totalCost <= maxDc)
 
     Box(
         modifier = Modifier
@@ -71,7 +75,7 @@ fun DeckConstructionScreen(
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MillenniumGold)
                 }
                 Text(
-                    text = "DECK CONSTRUCTION",
+                    text = if (isGba) "GBA DECK CONSTRUCTION" else "DECK CONSTRUCTION",
                     color = MillenniumGold,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
@@ -82,10 +86,10 @@ fun DeckConstructionScreen(
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = "LV $duelistLevel",
+                        text = if (isGba) "TCG EXPERT" else "LV $duelistLevel",
                         color = Color(0xFFFDE047),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                     )
                 }
@@ -108,15 +112,15 @@ fun DeckConstructionScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Deck Capacity: $totalCost / $maxDc DC",
-                            color = if (totalCost <= maxDc) MillenniumGold else AttackRed,
-                            fontSize = 12.sp,
+                            text = if (isGba) "Format: Battle City TCG" else "Deck Capacity: $totalCost / $maxDc DC",
+                            color = if (isGba || totalCost <= maxDc) MillenniumGold else AttackRed,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = "Cards: ${activeDeck.size} / 40",
-                            color = if (activeDeck.size == 40) LifePointGreen else AttackRed,
+                            color = if (activeDeck.size in 40..60) LifePointGreen else AttackRed,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
@@ -126,8 +130,10 @@ fun DeckConstructionScreen(
                     if (!isDeckValid) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (activeDeck.size != 40) {
-                                "⚠ A Deck must contain exactly 40 cards! (${40 - activeDeck.size} remaining)"
+                            text = if (activeDeck.size < 40) {
+                                "⚠ A Deck must contain at least 40 cards! (${40 - activeDeck.size} needed)"
+                            } else if (activeDeck.size > 60) {
+                                "⚠ A Deck cannot exceed 60 cards!"
                             } else {
                                 "⚠ Total Cost exceeds Deck Capacity ($maxDc DC)!"
                             },
@@ -201,25 +207,36 @@ fun DeckConstructionScreen(
                 items(displayedCards) { card ->
                     DeckCardItem(
                         card = card,
-                        duelistLevel = duelistLevel,
+                        duelistLevel = if (isGba) 999 else duelistLevel,
                         isFromDeck = selectedTab == DeckBuilderTab.ACTIVE_DECK,
                         onClick = {
                             if (selectedTab == DeckBuilderTab.ACTIVE_DECK) {
-                                val removed = DdsCampaignManager.removeCardFromDeck(card)
+                                val removed = if (isGba) GbaCampaignManager.removeCardFromDeck(card) else DdsCampaignManager.removeCardFromDeck(card)
                                 if (removed) {
                                     ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
                                     statusMessage = "Moved [${card.name}] to Trunk."
                                     refresh()
                                 }
                             } else {
-                                val (canAdd, reason) = DdsCampaignManager.canAddCard(card)
-                                if (canAdd) {
-                                    DdsCampaignManager.addCardToDeck(card)
-                                    ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
-                                    statusMessage = "Added [${card.name}] to Deck."
-                                    refresh()
+                                if (isGba) {
+                                    val added = GbaCampaignManager.addCardToDeck(card)
+                                    if (added) {
+                                        ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
+                                        statusMessage = "Added [${card.name}] to Deck."
+                                        refresh()
+                                    } else {
+                                        statusMessage = "Cannot add more than 3 copies of [${card.name}] or exceed 60 cards!"
+                                    }
                                 } else {
-                                    statusMessage = reason
+                                    val (canAdd, reason) = DdsCampaignManager.canAddCard(card)
+                                    if (canAdd) {
+                                        DdsCampaignManager.addCardToDeck(card)
+                                        ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
+                                        statusMessage = "Added [${card.name}] to Deck."
+                                        refresh()
+                                    } else {
+                                        statusMessage = reason
+                                    }
                                 }
                             }
                         },
@@ -232,7 +249,7 @@ fun DeckConstructionScreen(
         }
 
         // Optional GBC LCD Shader
-        if (DdsCampaignManager.isGbcLcdShaderEnabled) {
+        if (!isGba && DdsCampaignManager.isGbcLcdShaderEnabled) {
             GbcShaderOverlay(alpha = 0.18f)
         }
 
@@ -321,35 +338,19 @@ private fun DeckCardItem(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Deck Cost Badge
-            Surface(
-                color = if (isOverLevel) AttackRed else Color(0xFF1E293B),
-                shape = RoundedCornerShape(3.dp),
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                Text(
-                    text = "Cost: ${card.deckCost}",
-                    color = if (isOverLevel) Color.White else MillenniumGold,
-                    fontSize = 7.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                )
-            }
-
-            // Stats or Type
+            // ATK/DEF or Spell/Trap label
             if (card.isMonster) {
                 Text(
                     text = "${card.atk}/${card.def}",
-                    color = Color(0xFFCBD5E1),
+                    color = MillenniumGold,
                     fontSize = 7.5.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
             } else {
                 Text(
-                    text = card.cardType.displayName,
-                    color = if (card.isSpell) Color(0xFF2DD4BF) else Color(0xFFF472B6),
+                    text = if (card.isSpell) "SPELL" else "TRAP",
+                    color = if (card.isSpell) Color(0xFF34D399) else Color(0xFFF472B6),
                     fontSize = 7.5.sp,
                     fontWeight = FontWeight.Bold
                 )

@@ -589,6 +589,33 @@ fun DuelScreen(
                             engine.passTurn(autoRunAi = false)
                             executeAiTurnSequence()
                         }
+                    },
+                    canDirectAttack = canDirectAttack,
+                    onDirectAttack = {
+                        if (canDirectAttack && selectedPlayerMonsterSlot != null) {
+                            val dmg = engine.player.monsterZones[selectedPlayerMonsterSlot!!]?.card?.atk ?: 0
+                            playSfx("attack")
+                            activeAttackRay = AttackRayState(
+                                fromPlayer = true,
+                                fromSlot = selectedPlayerMonsterSlot!!,
+                                toSlot = null,
+                                isDirect = true
+                            )
+                            engine.declareAttack(selectedPlayerMonsterSlot!!, null)
+                            selectedPlayerMonsterSlot = null
+                            if (dmg > 0) {
+                                opponentFloatingDamage = dmg
+                                playSfx("damage")
+                            }
+                            refresh()
+                            coroutineScope.launch {
+                                delay(1000)
+                                activeAttackRay = null
+                                autoTargetNextAttacker()
+                                delay(800)
+                                opponentFloatingDamage = null
+                            }
+                        }
                     }
                 )
             }
@@ -1369,7 +1396,9 @@ private fun HandCarouselAndControls(
     onActivateSpell: () -> Unit,
     onSetSpellTrap: () -> Unit,
     onAdvancePhase: () -> Unit,
-    onEndTurn: () -> Unit
+    onEndTurn: () -> Unit,
+    canDirectAttack: Boolean = false,
+    onDirectAttack: () -> Unit = {}
 ) {
     val selectedCard = selectedCardIndex?.let { hand.getOrNull(it)?.card }
 
@@ -1383,14 +1412,30 @@ private fun HandCarouselAndControls(
                     .padding(bottom = 4.dp)
                     .border(1.dp, AttackRed, RoundedCornerShape(8.dp))
             ) {
-                Text(
-                    text = "⚔ Attacking Monster: ${selectedPlayerMonster.name} (ATK ${selectedPlayerMonster.atk})",
-                    color = Color(0xFFFCA5A5),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(4.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "⚔ Attacking: ${selectedPlayerMonster.name} (ATK ${selectedPlayerMonster.atk})",
+                        color = Color(0xFFFCA5A5),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (canDirectAttack) {
+                        Button(
+                            onClick = onDirectAttack,
+                            colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                        ) {
+                            Text("DIRECT ATTACK", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
             }
         }
 
@@ -1417,23 +1462,29 @@ private fun HandCarouselAndControls(
                     ) {
                         if (card.isMonster) {
                             val canSummonNow = isPlayerTurn && !hasSummoned && (currentPhase == DuelPhase.MAIN_PHASE_1 || currentPhase == DuelPhase.MAIN_PHASE_2)
+                            val isTribute = card.level >= 5
+                            val tributeLabel = if (card.level >= 7) "Tribute (2)" else if (card.level in 5..6) "Tribute (1)" else "Summon"
                             Button(
                                 onClick = onSummonAttack,
                                 enabled = canSummonNow,
-                                colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isTribute) Color(0xFFD97706) else AttackRed
+                                ),
                                 shape = RoundedCornerShape(4.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text(if (hasSummoned) "Summoned" else "Summon", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(if (hasSummoned) "Summoned" else tributeLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                             Button(
                                 onClick = onSetDefense,
                                 enabled = canSummonNow,
-                                colors = ButtonDefaults.buttonColors(containerColor = DefenseBlue),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isTribute) Color(0xFF92400E) else DefenseBlue
+                                ),
                                 shape = RoundedCornerShape(4.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("Set DEF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(if (isTribute) "Trib Set" else "Set DEF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         } else if (card.isSpell) {
                             Button(

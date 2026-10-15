@@ -19,6 +19,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yugioh.recomp.core.engine.DdsCampaignManager
+import com.yugioh.recomp.core.engine.GbaCampaignManager
+import com.yugioh.recomp.core.rom.RomAssetCache
+import com.yugioh.recomp.core.rom.RomPlatform
 import com.yugioh.recomp.ui.theme.*
 
 data class OpponentProfile(
@@ -36,10 +39,16 @@ fun CampaignHubScreen(
     onOpenDeckBuilder: () -> Unit,
     onReturnToRomImporter: () -> Unit
 ) {
-    var selectedOpponent by remember { mutableStateOf(DdsCampaignManager.selectedOpponentName) }
-    var isShaderEnabled by remember { mutableStateOf(DdsCampaignManager.isGbcLcdShaderEnabled) }
+    val isGba = RomAssetCache.activeTarget?.platform == RomPlatform.GBA
 
-    val opponents = remember {
+    var selectedOpponent by remember {
+        mutableStateOf(if (isGba) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName)
+    }
+    var isShaderEnabled by remember {
+        mutableStateOf(if (isGba) false else DdsCampaignManager.isGbcLcdShaderEnabled)
+    }
+
+    val ddsOpponents = remember {
         listOf(
             OpponentProfile(
                 name = "Tristan Taylor",
@@ -84,10 +93,13 @@ fun CampaignHubScreen(
         )
     }
 
-    val totalCost = DdsCampaignManager.totalDeckCost()
-    val maxDc = DdsCampaignManager.deckCapacity
-    val duelistLevel = DdsCampaignManager.duelistLevel
-    val isDeckReady = DdsCampaignManager.activeDeck.size == 40 && totalCost <= maxDc
+    val opponents = if (isGba) GbaCampaignManager.opponents else ddsOpponents
+
+    val totalCost = if (isGba) 0 else DdsCampaignManager.totalDeckCost()
+    val maxDc = if (isGba) 0 else DdsCampaignManager.deckCapacity
+    val duelistLevel = if (isGba) 0 else DdsCampaignManager.duelistLevel
+    val activeDeckSize = if (isGba) GbaCampaignManager.activeDeck.size else DdsCampaignManager.activeDeck.size
+    val isDeckReady = if (isGba) activeDeckSize in 40..60 else (activeDeckSize == 40 && totalCost <= maxDc)
 
     Box(
         modifier = Modifier
@@ -101,29 +113,44 @@ fun CampaignHubScreen(
                 .fillMaxSize()
                 .padding(12.dp)
         ) {
-            // Header: Title & GBC Shader Toggle
+            // Header: Title & GBA/GBC Mode Indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "DUEL-DECOMP",
+                            color = MillenniumGold,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = if (isGba) Color(0xFF4338CA) else Color(0xFF047857),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = if (isGba) " GBA 16-COLOR " else " GBC 2BPP ",
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                     Text(
-                        text = "DUEL-DECOMP",
-                        color = MillenniumGold,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 2.sp
-                    )
-                    Text(
-                        text = "STAGE 1: DOMINO TOWN",
+                        text = if (isGba) "BATTLE CITY TOURNAMENT - TCG EXPERT RULES" else "STAGE 1: DOMINO TOWN (DDS RULES)",
                         color = Color(0xFF94A3B8),
-                        fontSize = 11.sp,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // GBC LCD Shader Toggle Button
+                // Screen Shader Toggle Button
                 Button(
                     onClick = {
                         isShaderEnabled = !isShaderEnabled
@@ -136,7 +163,7 @@ fun CampaignHubScreen(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = if (isShaderEnabled) "📺 GBC LCD: ON" else "📺 GBC LCD: OFF",
+                        text = if (isShaderEnabled) "📺 LCD: ON" else "📺 LCD: OFF",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -146,13 +173,13 @@ fun CampaignHubScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Player Profile Bar (Deck Capacity & Duelist Level)
+            // Player Profile Bar
             Surface(
                 color = Color(0xFF131826),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, MillenniumGold, RoundedCornerShape(10.dp))
+                    .border(1.dp, if (isGba) Color(0xFF6366F1) else MillenniumGold, RoundedCornerShape(10.dp))
                     .padding(8.dp)
             ) {
                 Row(
@@ -163,9 +190,9 @@ fun CampaignHubScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF2563EB)),
+                                .background(if (isGba) Color(0xFF4F46E5) else Color(0xFF2563EB)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Y", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -179,28 +206,43 @@ fun CampaignHubScreen(
                                 fontSize = 13.sp
                             )
                             Text(
-                                text = "Duelist Level: LV $duelistLevel",
-                                color = MillenniumGold,
+                                text = if (isGba) "Rules: TCG Expert (Tributes Enabled)" else "Duelist Level: LV $duelistLevel",
+                                color = if (isGba) Color(0xFFA5B4FC) else MillenniumGold,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 11.sp
+                                fontSize = 10.5.sp
                             )
                         }
                     }
 
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "Deck: $totalCost / $maxDc DC",
-                            color = if (totalCost <= maxDc) Color(0xFF86EFAC) else AttackRed,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                        Text(
-                            text = "Cards: ${DdsCampaignManager.activeDeck.size} / 40",
-                            color = if (DdsCampaignManager.activeDeck.size == 40) Color(0xFF93C5FD) else AttackRed,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        )
+                        if (isGba) {
+                            Text(
+                                text = "Format: Battle City",
+                                color = Color(0xFF86EFAC),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.5.sp
+                            )
+                            Text(
+                                text = "Cards: $activeDeckSize / 40",
+                                color = if (activeDeckSize in 40..60) Color(0xFF93C5FD) else AttackRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        } else {
+                            Text(
+                                text = "Deck: $totalCost / $maxDc DC",
+                                color = if (totalCost <= maxDc) Color(0xFF86EFAC) else AttackRed,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "Cards: $activeDeckSize / 40",
+                                color = if (activeDeckSize == 40) Color(0xFF93C5FD) else AttackRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                 }
             }
@@ -222,7 +264,7 @@ fun CampaignHubScreen(
                 ) {
                     Icon(Icons.Default.Build, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Deck Construction", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(if (isGba) "GBA Deck Construction" else "Deck Construction", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(
@@ -238,7 +280,7 @@ fun CampaignHubScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "SELECT OPPONENT:",
+                text = if (isGba) "SELECT BATTLE CITY OPPONENT:" else "SELECT OPPONENT:",
                 color = Color(0xFFCBD5E1),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -256,7 +298,7 @@ fun CampaignHubScreen(
             ) {
                 items(opponents) { opp ->
                     val isSelected = selectedOpponent == opp.name
-                    val wins = DdsCampaignManager.opponentWins[opp.name] ?: 0
+                    val wins = if (isGba) GbaCampaignManager.opponentWins[opp.name] ?: 0 else DdsCampaignManager.opponentWins[opp.name] ?: 0
 
                     Surface(
                         color = if (isSelected) Color(0xFF1E2538) else Color(0xFF111420),
@@ -265,12 +307,16 @@ fun CampaignHubScreen(
                             .fillMaxWidth()
                             .border(
                                 width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) MillenniumGold else Color(0xFF242C40),
+                                color = if (isSelected) (if (isGba) Color(0xFF818CF8) else MillenniumGold) else Color(0xFF242C40),
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .clickable {
                                 selectedOpponent = opp.name
-                                DdsCampaignManager.selectedOpponentName = opp.name
+                                if (isGba) {
+                                    GbaCampaignManager.selectedOpponentName = opp.name
+                                } else {
+                                    DdsCampaignManager.selectedOpponentName = opp.name
+                                }
                             }
                     ) {
                         Row(
@@ -309,8 +355,8 @@ fun CampaignHubScreen(
                                         fontSize = 13.sp
                                     )
                                     Text(
-                                        text = "Wins: $wins / 5",
-                                        color = if (wins >= 5) LifePointGreen else MillenniumGold,
+                                        text = "Wins: $wins",
+                                        color = if (wins >= 3) LifePointGreen else MillenniumGold,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -329,7 +375,7 @@ fun CampaignHubScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "Difficulty: ${opp.difficulty}",
+                                        text = "Tier: ${opp.title} (${opp.difficulty})",
                                         color = Color(0xFFF59E0B),
                                         fontSize = 9.sp
                                     )
@@ -371,7 +417,7 @@ fun CampaignHubScreen(
             }
         }
 
-        // Optional GBC LCD Shader overlay
+        // Optional LCD Shader overlay
         if (isShaderEnabled) {
             GbcShaderOverlay(alpha = 0.18f)
         }

@@ -161,7 +161,7 @@ fun RomImportScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "This APK contains zero copyrighted assets or ROM binaries. Provide an official Yu-Gi-Oh! Dark Duel Stories (GBC) cartridge dump to dynamically extract textures, card tables, and audio.",
+                    text = "This APK contains zero copyrighted assets or ROM binaries. Provide an official Game Boy Advance (The Eternal Duelist Soul / Worldwide Edition) or GBC cartridge dump to dynamically extract textures, card tables, and audio.",
                     color = Color(0xFF94A3B8),
                     fontSize = 11.sp,
                     lineHeight = 15.sp
@@ -169,7 +169,30 @@ fun RomImportScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Hero Quick Start Button: GBA The Eternal Duelist Soul
+        Button(
+            onClick = {
+                val synthBytes = RomValidator.createSyntheticGbaRom()
+                processRomBytes(synthBytes, "Yu-Gi-Oh! The Eternal Duelist Soul (USA) [Advance].gba")
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .border(1.5.dp, MillenniumGold, RoundedCornerShape(10.dp))
+        ) {
+            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.Start) {
+                Text("⚡ QUICK START: GBA ADVANCE MODE", fontSize = 12.5.sp, fontWeight = FontWeight.Black, color = Color.White)
+                Text("The Eternal Duelist Soul • 16-Color TCG • Battle City", fontSize = 9.5.sp, color = Color(0xFFC7D2FE))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Action Buttons: File Picker & Verified Samples (GBC / GBA)
         Button(
@@ -180,7 +203,7 @@ fun RomImportScreen(
         ) {
             Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Select ROM (.gbc / .gba)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Select Cartridge ROM (.gba / .gbc)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -191,6 +214,18 @@ fun RomImportScreen(
         ) {
             Button(
                 onClick = {
+                    val synthBytes = RomValidator.createSyntheticGbaRom()
+                    processRomBytes(synthBytes, "Yu-Gi-Oh! The Eternal Duelist Soul (USA) [Synthetic].gba")
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3730A3)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Test GBA Dump (EDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Button(
+                onClick = {
                     val synthBytes = RomValidator.createSyntheticDdsRom()
                     processRomBytes(synthBytes, "Yu-Gi-Oh! Dark Duel Stories (USA) [Synthetic].gbc")
                 },
@@ -199,18 +234,6 @@ fun RomImportScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Test GBC Dump (DDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Button(
-                onClick = {
-                    val synthBytes = RomValidator.createSyntheticGbaRom()
-                    processRomBytes(synthBytes, "Yu-Gi-Oh! The Eternal Duelist Soul (USA) [Synthetic].gba")
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4338CA)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Test GBA Dump (EDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
             }
         }
 
