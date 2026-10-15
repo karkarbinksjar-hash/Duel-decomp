@@ -1337,7 +1337,7 @@ private fun SelectedCardHudBar(
             .clickable { onInspect() }
     ) {
         if (card != null) {
-            val cardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+            val cardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
 
             Row(
                 modifier = Modifier
@@ -1749,7 +1749,7 @@ private fun ZoneSlot(
                 val cardBitmap = if (duelCard.position.isFaceDown) {
                     BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
                 } else {
-                    BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+                    com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
                 }
                 Box(
                     modifier = Modifier.fillMaxSize().padding(1.dp),
@@ -1795,7 +1795,7 @@ private fun ZoneSlot(
                     }
                 }
             } else {
-                val cardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+                val cardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
                 Box(
                     modifier = Modifier.fillMaxSize().padding(1.dp),
                     contentAlignment = Alignment.Center
@@ -1946,7 +1946,7 @@ private fun HandCardItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+    val fullCardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
 
     Surface(
         color = Color(0xFF141724),
@@ -2444,7 +2444,7 @@ private fun PhaseTransitionBanner(
 
 @Composable
 private fun MiniCardPreview(card: Card) {
-    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+    val fullCardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Image(

@@ -32,6 +32,9 @@ class MainActivity : ComponentActivity() {
         // Strict Mobile UX Constraint: Force Portrait Mode
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
+        // Initialize Card Artwork Loader with application cache dir
+        com.yugioh.recomp.core.rom.CardArtworkLoader.init(this)
+
         setContent {
             YuGiOhRecompTheme {
                 var currentScreen by remember { mutableStateOf(AppScreen.ROM_IMPORT) }

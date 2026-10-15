@@ -11,8 +11,8 @@ android {
         applicationId = "com.yugioh.recomp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.9.0"
+        versionCode = 11
+        versionName = "2.0.0"
         setProperty("archivesBaseName", "Duel-decomp")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -81,6 +81,13 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    testOptions {
+        unitTests.all {
+            it.maxHeapSize = "384m"
+            it.jvmArgs("-XX:+UseSerialGC")
         }
     }
 }
