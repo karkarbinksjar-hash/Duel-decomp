@@ -1,6 +1,7 @@
 package com.yugioh.recomp.core.rom
 
 import com.yugioh.recomp.core.engine.Card
+import com.yugioh.recomp.core.engine.GbaCampaignManager
 
 /**
  * In-memory and runtime texture cache for extracted ROM assets and high-fidelity card frames.
@@ -31,6 +32,7 @@ object RomAssetCache {
 
         if (target.platform == RomPlatform.GBA) {
             // GBA EXPANSION PIPELINE: The Eternal Duelist Soul / Worldwide Edition (16-color 4bpp/8bpp)
+            GbaCampaignManager.resetToNewGame()
             val cards = GbaRomParser.extractCardsFromRom(romBytes)
             for (card in cards) {
                 cardDatabase[card.id] = card
@@ -97,7 +99,11 @@ object RomAssetCache {
         return cardFullTextures[cardId] ?: run {
             val card = getCard(cardId) ?: CardDataExtractor.getCanonicalDdsCardDatabase().firstOrNull { it.id == cardId }
             if (card != null) {
-                val pixels = CardArtRenderer.renderFullCard(card, 96, 140)
+                val pixels = if (activeTarget?.platform == RomPlatform.GBA) {
+                    CardArtRenderer.renderGbaFullCard(card, 96, 140)
+                } else {
+                    CardArtRenderer.renderFullCard(card, 96, 140)
+                }
                 DecodedSprite(96, 140, pixels).also { cardFullTextures[cardId] = it }
             } else {
                 getCardSprite(cardId)

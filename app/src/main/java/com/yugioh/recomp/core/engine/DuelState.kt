@@ -53,14 +53,19 @@ class Duelist(
     val hand: MutableList<DuelCard> = mutableListOf(),
     val graveyard: MutableList<Card> = mutableListOf(),
     val monsterZones: Array<DuelCard?> = arrayOfNulls(5),
-    val spellTrapZones: Array<DuelCard?> = arrayOfNulls(5)
+    val spellTrapZones: Array<DuelCard?> = arrayOfNulls(5),
+    var swordsTurnsRemaining: Int = 0
 ) {
     fun activeMonstersCount(): Int = monsterZones.count { it != null }
     fun activeSpellTrapsCount(): Int = spellTrapZones.count { it != null }
     fun firstEmptyMonsterSlot(): Int = monsterZones.indexOfFirst { it == null }
     fun firstEmptySpellSlot(): Int = spellTrapZones.indexOfFirst { it == null }
 
+    fun hasFaceUpMonster(cardName: String): Boolean =
+        monsterZones.any { it != null && !it.position.isFaceDown && it.card.name == cardName }
+
     fun resetTurnActions() {
+        if (swordsTurnsRemaining > 0) swordsTurnsRemaining--
         for (monster in monsterZones) {
             if (monster != null) {
                 monster.hasAttackedThisTurn = false

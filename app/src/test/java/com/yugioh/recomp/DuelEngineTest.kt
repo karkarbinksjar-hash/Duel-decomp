@@ -11,6 +11,7 @@ class DuelEngineTest {
 
     @Before
     fun setUp() {
+        com.yugioh.recomp.core.rom.RomAssetCache.reset()
         engine = DuelEngine()
         engine.startDuel()
     }
@@ -280,5 +281,121 @@ class DuelEngineTest {
         assertNotNull(jinzoTexture)
         assertEquals(96, jinzoTexture.width)
         assertEquals(140, jinzoTexture.height)
+    }
+
+    @Test
+    fun testGbaTributeSummonRequirements() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            synthGba
+        )
+        val gbaEngine = DuelEngine()
+        gbaEngine.startDuel("Joey Wheeler")
+        assertTrue(gbaEngine.isGbaMode)
+
+        val dm = GbaCardCatalog.BUSTER_BLADER // Level 7: requires 2 tributes
+        gbaEngine.player.hand.add(0, DuelCard(card = dm))
+
+        // No monsters on field -> Cannot summon
+        val (canSummonNoTrib, reason) = gbaEngine.canSummon(isPlayer = true, card = dm)
+        assertFalse(canSummonNoTrib)
+        assertTrue(reason.contains("Requires 2 Tribute"))
+
+        // Put 1 monster on field -> Still cannot summon
+        val tribute1 = GbaCardCatalog.GEMINI_ELF
+        gbaEngine.player.monsterZones[0] = DuelCard(card = tribute1)
+        val (canSummon1Trib, _) = gbaEngine.canSummon(isPlayer = true, card = dm)
+        assertFalse(canSummon1Trib)
+
+        // Put 2nd monster on field -> Can tribute summon!
+        val tribute2 = GbaCardCatalog.VORSE_RAIDER
+        gbaEngine.player.monsterZones[1] = DuelCard(card = tribute2)
+        val (canSummon2Trib, _) = gbaEngine.canSummon(isPlayer = true, card = dm)
+        assertTrue(canSummon2Trib)
+
+        val success = gbaEngine.summonMonster(
+            isPlayer = true,
+            handIndex = 0,
+            slotIndex = 0,
+            tributeSlots = listOf(0, 1)
+        )
+        assertTrue(success)
+        assertEquals("Buster Blader", gbaEngine.player.monsterZones[0]?.card?.name)
+        assertNull(gbaEngine.player.monsterZones[1])
+        assertEquals(2, gbaEngine.player.graveyard.size)
+    }
+
+    @Test
+    fun testGbaJinzoTrapNegation() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            synthGba
+        )
+        val gbaEngine = DuelEngine()
+        gbaEngine.startDuel("Joey Wheeler")
+
+        // Player controls face-up Jinzo
+        val jinzo = GbaCardCatalog.JINZO
+        gbaEngine.player.monsterZones[0] = DuelCard(card = jinzo, position = CardPosition.FACE_UP_ATTACK)
+
+        // Opponent has set Mirror Force
+        val mirrorForce = DdsCardCatalog.MIRROR_FORCE
+        gbaEngine.opponent.spellTrapZones[0] = DuelCard(card = mirrorForce, position = CardPosition.SET_SPELL_TRAP)
+
+        // Advance to Battle Phase
+        while (gbaEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            gbaEngine.nextPhase()
+        }
+
+        val attacked = gbaEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue(attacked)
+
+        // Jinzo negates Mirror Force! Jinzo must NOT be destroyed!
+        assertNotNull(gbaEngine.player.monsterZones[0])
+        assertEquals("Jinzo", gbaEngine.player.monsterZones[0]?.card?.name)
+        assertEquals(5600, gbaEngine.opponent.lifePoints) // 8000 - 2400 direct attack
+    }
+
+    @Test
+    fun testGbaMagicCylinderReflection() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            synthGba
+        )
+        val gbaEngine = DuelEngine()
+        gbaEngine.startDuel("Joey Wheeler")
+
+        // Player controls Gemini Elf (1900 ATK)
+        val gemini = GbaCardCatalog.GEMINI_ELF
+        gbaEngine.player.monsterZones[0] = DuelCard(card = gemini, position = CardPosition.FACE_UP_ATTACK)
+
+        // Opponent has set Magic Cylinder
+        val cylinder = GbaCardCatalog.MAGIC_CYLINDER
+        gbaEngine.opponent.spellTrapZones[0] = DuelCard(card = cylinder, position = CardPosition.SET_SPELL_TRAP)
+
+        while (gbaEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            gbaEngine.nextPhase()
+        }
+
+        val attacked = gbaEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue(attacked)
+
+        // Magic Cylinder negates attack and deals 1900 damage to player!
+        assertEquals(8000 - 1900, gbaEngine.player.lifePoints)
+        assertEquals(8000, gbaEngine.opponent.lifePoints)
+    }
+
+    @Test
+    fun testGbaCampaignManagerStarterDeck() {
+        GbaCampaignManager.resetToNewGame()
+        assertEquals(40, GbaCampaignManager.activeDeck.size)
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Jinzo" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Gemini Elf" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Vorse Raider" })
+        assertTrue(GbaCampaignManager.opponents.any { it.name == "Joey Wheeler" })
+        assertTrue(GbaCampaignManager.opponents.any { it.name == "Seto Kaiba" })
     }
 }
