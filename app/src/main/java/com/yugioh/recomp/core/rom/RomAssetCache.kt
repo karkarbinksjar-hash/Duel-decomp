@@ -64,8 +64,24 @@ object RomAssetCache {
             } else {
                 GbcTileDecoder.generateProceduralCardArt(cardId.toLong() * 41L, 64, 64)
             }
-            DecodedSprite(64, 64, pixels).also { cardArtSprites[cardId] = it }
+            // Crisp integer-upscaled sprite
+            val upscaled = CardArtRenderer.upscaleSprite(pixels, 64, 64, scale = 2)
+            upscaled.also { cardArtSprites[cardId] = it }
         }
+    }
+
+    /**
+     * Returns a crisp 3x integer-upscaled retro sprite (192x192) for high-DPI display.
+     */
+    fun getCardSpriteUpscaled(cardId: Int, scale: Int = 3): DecodedSprite {
+        val baseSprite = getCardSprite(cardId)
+        val card = getCard(cardId) ?: CardDataExtractor.getCanonicalDdsCardDatabase().firstOrNull { it.id == cardId }
+        val rawPixels = if (card != null) {
+            CardArtRenderer.renderCardArtwork(card, 64, 64)
+        } else {
+            baseSprite.pixels
+        }
+        return CardArtRenderer.upscaleSprite(rawPixels, 64, 64, scale)
     }
 
     fun getCardFullTexture(cardId: Int): DecodedSprite {

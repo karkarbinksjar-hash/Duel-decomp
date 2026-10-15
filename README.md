@@ -63,9 +63,22 @@ The engine **does not bundle or ship with copyrighted game assets or full ROMs**
    - Pure Kotlin sound generator recreating Game Boy sound channels:
      - Pulse 1 & Pulse 2 (variable duty cycles and pitch sweeps)
      - Channel 4 LFSR pseudo-random noise generator
-   - Authentic chiptune audio synthesized for card draws, monster summons, attack clashes, and victory fanfares.
+   - Authentic chiptune audio synthesized for card draws, golden portal summons, attack clashes, damage ticks, card destructions, direct blasts, and victory fanfares.
 
-8. **CI/CD & Automated Release Pipeline**:
+8. **Dynamic Duel Animation Suite**:
+   - **Golden Millennium Summoning Portal**: Animated golden Millennium rune seal with rotating glyphs, ascending light beams, and bounce-in card scaling.
+   - **Attack Clash & Screen Shake**: Dynamic electric lightning beam connecting combatants, clashing swords emblem, expanding shockwave ring, and multi-frame arena screen shake.
+   - **Explosive Card Destruction**: Shattered card fragments and expanding fiery shockwaves on monster destruction.
+   - **Rolling Life Points Counter**: Smooth decrement steps with pulsing crimson text and rapid chiptune damage ticks.
+   - **Direct Attack Blasts**: Golden beam strikes directly against the opponent's LP header.
+
+9. **Authentic GBC Card Presentation & Pixel Art Upscaling**:
+   - Nearest-neighbor integer upscaling preserving razor-sharp retro pixel edges without blur.
+   - Authentic Dark Duel Stories (GBC) yellow card status screen with card ID, Level, DC, ATK, DEF, Monster Type, Alignment, and lore.
+   - Modular GBA expansion architecture supporting 16-color 4bpp/8bpp assets (*The Eternal Duelist Soul* / *Worldwide Edition*).
+
+10. **CI/CD & Automated Release Pipeline**:
+   - Application ID restored to `com.yugioh.recomp` to ensure in-place updates over previous versions without creating duplicate apps.
    - Full Gradle Version Catalog (`gradle/libs.versions.toml`).
    - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running `./gradlew test` and `./gradlew assembleRelease` on every Pull Request and push to `main`.
    - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building, signing, and attaching official `Duel-decomp-v*.*.*.apk` releases.

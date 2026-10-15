@@ -80,10 +80,24 @@ object ChiptuneSynthesizer {
     }
 
     /**
-     * Monster Summon chiptune SFX
+     * Monster Summon chiptune SFX (Ascending mystical sweep)
      */
     fun createSummonSfx(): ShortArray {
-        return synthesizeArpeggio(listOf(440.0, 554.37, 659.25, 880.0), 60)
+        return synthesizeArpeggio(listOf(440.0, 554.37, 659.25, 880.0, 1108.73, 1318.51), 40)
+    }
+
+    /**
+     * Card Destruction burst chiptune SFX (Sharp noise crackle + descending pitch drop)
+     */
+    fun createCardDestructionSfx(): ShortArray {
+        val noise = synthesizeNoise(180, decay = true)
+        val pulse = synthesizePulse(120.0, 180, 0.5, decay = true)
+        val combined = ShortArray(noise.size)
+        for (i in combined.indices) {
+            val sum = noise[i].toInt() + pulse[i].toInt()
+            combined[i] = sum.coerceIn(-32768, 32767).toShort()
+        }
+        return combined
     }
 
     /**
@@ -92,6 +106,20 @@ object ChiptuneSynthesizer {
     fun createAttackClashSfx(): ShortArray {
         val noise = synthesizeNoise(150, decay = true)
         val pulse = synthesizePulse(180.0, 150, 0.25, decay = true)
+        val combined = ShortArray(noise.size)
+        for (i in combined.indices) {
+            val sum = noise[i].toInt() + pulse[i].toInt()
+            combined[i] = sum.coerceIn(-32768, 32767).toShort()
+        }
+        return combined
+    }
+
+    /**
+     * Direct Attack Blast chiptune SFX (Deep thunderous strike)
+     */
+    fun createDirectAttackSfx(): ShortArray {
+        val noise = synthesizeNoise(280, decay = true)
+        val pulse = synthesizePulse(90.0, 280, 0.4, decay = true)
         val combined = ShortArray(noise.size)
         for (i in combined.indices) {
             val sum = noise[i].toInt() + pulse[i].toInt()
