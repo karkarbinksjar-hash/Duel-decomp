@@ -2,12 +2,16 @@ package com.yugioh.recomp.core.engine
 
 import java.util.concurrent.atomic.AtomicLong
 
-enum class CardPosition(val isDefense: Boolean, val isFaceDown: Boolean) {
-    FACE_UP_ATTACK(false, false),
-    FACE_UP_DEFENSE(true, false),
-    FACE_DOWN_DEFENSE(true, true),
-    SET_SPELL_TRAP(false, true),
-    FACE_UP_SPELL_TRAP(false, false)
+enum class CardPosition(
+    val isDefense: Boolean,
+    val isFaceDown: Boolean,
+    val displayName: String
+) {
+    FACE_UP_ATTACK(false, false, "Attack Position"),
+    FACE_UP_DEFENSE(true, false, "Face-Up Defense Position"),
+    FACE_DOWN_DEFENSE(true, true, "Face-Down Defense Position"),
+    SET_SPELL_TRAP(false, true, "Set"),
+    FACE_UP_SPELL_TRAP(false, false, "Face-Up")
 }
 
 data class DuelCard(
@@ -41,50 +45,6 @@ data class ClashState(
     val resultSummary: String
 )
 
-sealed class AiTurnStep {
-    data class PhaseTransition(
-        val phase: DuelPhase,
-        val announcement: String
-    ) : AiTurnStep()
-
-    data class Draw(
-        val card: Card?,
-        val announcement: String
-    ) : AiTurnStep()
-
-    data class ActivateSpell(
-        val card: Card,
-        val announcement: String
-    ) : AiTurnStep()
-
-    data class SetTrap(
-        val card: Card,
-        val slotIndex: Int,
-        val announcement: String
-    ) : AiTurnStep()
-
-    data class SummonMonster(
-        val card: Card,
-        val slotIndex: Int,
-        val isDefense: Boolean,
-        val announcement: String
-    ) : AiTurnStep()
-
-    data class DeclareAttack(
-        val attackerSlot: Int,
-        val attackerCard: Card,
-        val defenderSlot: Int?, // null = direct attack
-        val defenderCard: Card?,
-        val predictedDamage: Int,
-        val isDirect: Boolean,
-        val announcement: String
-    ) : AiTurnStep()
-
-    data class EndTurn(
-        val announcement: String
-    ) : AiTurnStep()
-}
-
 class Duelist(
     val name: String,
     val isHuman: Boolean,
@@ -109,4 +69,50 @@ class Duelist(
             }
         }
     }
+}
+
+sealed class AiTurnStep {
+    abstract val announcement: String
+
+    data class PhaseTransition(
+        val phase: DuelPhase,
+        override val announcement: String
+    ) : AiTurnStep()
+
+    data class Draw(
+        val card: Card?,
+        override val announcement: String
+    ) : AiTurnStep()
+
+    data class ActivateSpell(
+        val card: Card,
+        override val announcement: String
+    ) : AiTurnStep()
+
+    data class SetTrap(
+        val card: Card,
+        val slotIndex: Int,
+        override val announcement: String
+    ) : AiTurnStep()
+
+    data class SummonMonster(
+        val card: Card,
+        val slotIndex: Int,
+        val isDefense: Boolean,
+        override val announcement: String
+    ) : AiTurnStep()
+
+    data class DeclareAttack(
+        val attackerSlot: Int,
+        val defenderSlot: Int?,
+        val attackerCard: Card,
+        val defenderCard: Card? = null,
+        val isDirect: Boolean,
+        val predictedDamage: Int,
+        override val announcement: String
+    ) : AiTurnStep()
+
+    data class EndTurn(
+        override val announcement: String
+    ) : AiTurnStep()
 }

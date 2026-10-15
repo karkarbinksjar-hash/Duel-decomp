@@ -40,8 +40,8 @@ object RomAssetCache {
             val sprite = DdsRomParser.extractCardSprite(romBytes, card, 64, 64)
             cardArtSprites[card.id] = sprite
 
-            // Render complete Yu-Gi-Oh! card frame (96x140) using validated GBC art sprite
-            val fullPixels = CardArtRenderer.renderFullCard(card, 96, 140, artPixelsOverride = sprite.pixels)
+            // Render complete Yu-Gi-Oh! card frame (96x140)
+            val fullPixels = CardArtRenderer.renderFullCard(card, 96, 140)
             cardFullTextures[card.id] = DecodedSprite(96, 140, fullPixels)
         }
 

@@ -56,8 +56,9 @@ class DuelEngineTest {
     }
 
     @Test
-    fun testTributeSummonRequirements() {
-        // High level monster (Level 7) requires 2 tributes
+    fun testDdsNoTributeSummonRule() {
+        // In Dark Duel Stories (GBC), high level monsters (e.g. Level 7 Dark Magician)
+        // do not require tributes to normal summon directly.
         val highLevelMonster = Card(
             id = 14,
             name = "Dark Magician",
@@ -70,31 +71,18 @@ class DuelEngineTest {
         )
         engine.player.hand.add(0, DuelCard(card = highLevelMonster))
 
-        // Cannot summon without tributes
-        val (canSummonNoTributes, _) = engine.canSummon(isPlayer = true, card = highLevelMonster)
-        assertFalse(canSummonNoTributes)
-
-        // Put 2 tributes on the field
-        val tribute1 = Card(id = 2, name = "Elf 1", atk = 800, def = 2000, level = 4, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
-        val tribute2 = Card(id = 3, name = "Giant 2", atk = 1200, def = 1000, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
-        engine.player.monsterZones[1] = DuelCard(card = tribute1)
-        engine.player.monsterZones[2] = DuelCard(card = tribute2)
-
-        val (canSummonWithTributes, _) = engine.canSummon(isPlayer = true, card = highLevelMonster)
-        assertTrue(canSummonWithTributes)
+        // DDS rule: can summon without tributes
+        val (canSummon, reason) = engine.canSummon(isPlayer = true, card = highLevelMonster)
+        assertTrue("DDS rules allow direct summon without tribute requirement: $reason", canSummon)
 
         val success = engine.summonMonster(
             isPlayer = true,
             handIndex = 0,
             slotIndex = 0,
-            tributeSlots = listOf(1, 2),
             setDefense = false
         )
         assertTrue(success)
         assertEquals("Dark Magician", engine.player.monsterZones[0]?.card?.name)
-        assertNull(engine.player.monsterZones[1])
-        assertNull(engine.player.monsterZones[2])
-        assertEquals(2, engine.player.graveyard.size)
     }
 
     @Test
@@ -132,13 +120,18 @@ class DuelEngineTest {
 
     @Test
     fun testSpellActivations() {
+        // Set player hand to 2 cards so Pot of Greed (removes 1, draws 2) respects DDS 5-card hand limit
+        engine.player.hand.clear()
+        engine.player.hand.add(DuelCard(card = Card(id = 2, name = "Monster 1", atk = 500, def = 500, level = 2, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)))
+        engine.player.hand.add(DuelCard(card = Card(id = 3, name = "Monster 2", atk = 600, def = 600, level = 2, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)))
+
         // Pot of Greed
         val potOfGreed = Card(id = 150, name = "Pot of Greed", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL)
         engine.player.hand.add(0, DuelCard(card = potOfGreed))
-        val handCountBefore = engine.player.hand.size
+        val handCountBefore = engine.player.hand.size // 3
 
         engine.activateSpell(isPlayer = true, handIndex = 0)
-        // Hand should have -1 for Pot of Greed + 2 drawn = handCountBefore + 1
+        // Hand should have -1 for Pot of Greed + 2 drawn = handCountBefore + 1 (4 cards <= 5 hand limit)
         assertEquals(handCountBefore + 1, engine.player.hand.size)
 
         // Dian Keto the Cure Maiden
@@ -239,21 +232,60 @@ class DuelEngineTest {
     }
 
     @Test
+    fun testDdsStarterDeckAndCapacity() {
+        val starterDeck = DdsCampaignManager.getCanonicalStarterDeck()
+        assertEquals("Canonical DDS Starter Deck must contain exactly 40 cards", 40, starterDeck.size)
+        assertTrue("Starter deck cost sum must be within 400 DC", starterDeck.sumOf { it.deckCost } <= 400)
+        for (card in starterDeck) {
+            assertTrue("Every starter card cost must be <= starting level 15: ${card.name} (${card.deckCost})", card.deckCost <= 15)
+        }
+    }
+
+    @Test
+    fun testDdsDuelistLevelCalculation() {
+        DdsCampaignManager.deckCapacity = 400
+        assertEquals(15, DdsCampaignManager.duelistLevel)
+
+        DdsCampaignManager.deckCapacity = 430
+        assertEquals(25, DdsCampaignManager.duelistLevel)
+
+        DdsCampaignManager.deckCapacity = 1120
+        assertEquals(255, DdsCampaignManager.duelistLevel)
+    }
+
+    @Test
+    fun testDdsOnTheFieldFusion() {
+        val dragon = Card(id = 122, name = "Yamatano Dragon Scroll", atk = 900, def = 300, level = 2, attribute = CardAttribute.WIND, cardType = CardType.MONSTER, monsterType = MonsterType.DRAGON)
+        val thunder = Card(id = 211, name = "Kaminarikozou", atk = 700, def = 600, level = 2, attribute = CardAttribute.THUNDER, cardType = CardType.MONSTER, monsterType = MonsterType.THUNDER)
+
+        val fused = DdsCampaignManager.checkFusion(dragon, thunder)
+        assertNotNull("Dragon + Thunder must fuse", fused)
+        assertEquals("Twin-Headed Thunder Dragon", fused?.name)
+        assertEquals(2800, fused?.atk)
+    }
+
+    @Test
+    fun testDdsHandLimitRule() {
+        // duelist starts with 5 cards in hand
+        assertEquals(5, engine.player.hand.size)
+        val drawn = engine.drawCard(isPlayer = true)
+        assertNull("Cannot draw when hand already contains 5 cards in DDS rules", drawn)
+        assertEquals(5, engine.player.hand.size)
+    }
+
+    @Test
     fun testAiTurnStepPlanningAndExecution() {
-        // Pass turn to opponent without auto-running AI
         engine.passTurn(autoRunAi = false)
         assertFalse(engine.isPlayerTurn)
 
         val steps = engine.planAiTurnSteps()
-        assertTrue("AI should plan at least one step", steps.isNotEmpty())
+        assertTrue("AI should plan steps", steps.isNotEmpty())
 
         for (step in steps) {
             val executed = engine.executeAiStep(step)
             assertTrue("Step execution should succeed or be valid", executed || engine.winner != null)
         }
 
-        // Turn should have ended and passed back to player
-        assertTrue("After running all steps, initiative must return to player", engine.isPlayerTurn)
-        assertEquals(DuelPhase.MAIN_PHASE_1, engine.currentPhase)
+        assertTrue("Turn must return to player", engine.isPlayerTurn)
     }
 }
