@@ -392,10 +392,66 @@ class DuelEngineTest {
     fun testGbaCampaignManagerStarterDeck() {
         GbaCampaignManager.resetToNewGame()
         assertEquals(40, GbaCampaignManager.activeDeck.size)
-        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Jinzo" })
-        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Gemini Elf" })
-        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Vorse Raider" })
+        // Authentic EDS Black Starter Deck features Armored Lizard!
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Armored Lizard" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Summoned Skull" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Sangan" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Raigeki" })
         assertTrue(GbaCampaignManager.opponents.any { it.name == "Joey Wheeler" })
         assertTrue(GbaCampaignManager.opponents.any { it.name == "Seto Kaiba" })
+    }
+
+    @Test
+    fun testEdsStartingDecksSelection() {
+        GbaCampaignManager.selectStarterDeck(StarterDeckType.BLACK)
+        assertEquals(40, GbaCampaignManager.activeDeck.size)
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Armored Lizard" })
+        assertEquals("15480588", GbaCampaignManager.activeDeck.first { it.name == "Armored Lizard" }.password)
+
+        GbaCampaignManager.selectStarterDeck(StarterDeckType.RED)
+        assertEquals(40, GbaCampaignManager.activeDeck.size)
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Axe Raider" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "7 Colored Fish" })
+
+        GbaCampaignManager.selectStarterDeck(StarterDeckType.GREEN)
+        assertEquals(40, GbaCampaignManager.activeDeck.size)
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Judge Man" })
+        assertTrue(GbaCampaignManager.activeDeck.any { it.name == "Armored Lizard" })
+    }
+
+    @Test
+    fun testEdsFiveTierOpponentProgression() {
+        GbaCampaignManager.resetToNewGame()
+        // Tier 1 must be unlocked by default
+        assertTrue(GbaCampaignManager.isTierUnlocked(1))
+        assertFalse(GbaCampaignManager.isTierUnlocked(2))
+
+        // Check opponents across all 5 tiers
+        val tier1 = GbaCampaignManager.opponents.filter { it.tier == 1 }
+        val tier2 = GbaCampaignManager.opponents.filter { it.tier == 2 }
+        val tier3 = GbaCampaignManager.opponents.filter { it.tier == 3 }
+        val tier4 = GbaCampaignManager.opponents.filter { it.tier == 4 }
+        val tier5 = GbaCampaignManager.opponents.filter { it.tier == 5 }
+
+        assertEquals(5, tier1.size)
+        assertEquals(5, tier2.size)
+        assertEquals(5, tier3.size)
+        assertEquals(5, tier4.size)
+        assertEquals(4, tier5.size)
+
+        // Clear Tier 1 (2 wins each)
+        tier1.forEach { GbaCampaignManager.opponentWins[it.name] = 2 }
+        assertTrue(GbaCampaignManager.isTierUnlocked(2))
+    }
+
+    @Test
+    fun testCardArtworkLoaderPasscodeResolution() {
+        val lizard = GbaCardCatalog.ARMORED_LIZARD
+        val passcode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(lizard)
+        assertEquals("15480588", passcode)
+
+        val skull = GbaCardCatalog.SUMMONED_SKULL_GBA
+        val skullPasscode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(skull)
+        assertEquals("70781052", skullPasscode)
     }
 }

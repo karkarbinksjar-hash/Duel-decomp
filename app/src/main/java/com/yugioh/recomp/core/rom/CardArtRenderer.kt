@@ -4,9 +4,10 @@ import com.yugioh.recomp.core.engine.*
 import kotlin.math.*
 
 /**
- * High-fidelity Game Boy Color pixel-art renderer and integer upscaler for Duel-decomp.
- * Generates authentic retro pixel art for cards matching Yu-Gi-Oh! Dark Duel Stories (GBC),
- * with nearest-neighbor integer scaling to preserve razor-sharp pixel art on mobile displays.
+ * High-fidelity pixel-art renderer and integer upscaler for Duel-decomp.
+ * Provides authentic TCG card frames, Millennium card back textures, and elemental
+ * crest fallbacks. Authentic card artwork is fetched dynamically at runtime via
+ * CardArtworkLoader without bundling any copyrighted ROM graphics.
  */
 object CardArtRenderer {
 
@@ -167,25 +168,27 @@ object CardArtRenderer {
         val starRowY = nameBarTop + nameBarHeight + 3
         if (card.isMonster && card.level > 0) {
             val starCount = min(12, card.level)
-            val starSpacing = (width * 0.065f).toInt().coerceAtLeast(8)
-            val startX = nameBarRight - (starCount * starSpacing)
-            for (i in 0 until starCount) {
-                val sx = startX + (i * starSpacing)
-                drawStar(pixels, width, sx, starRowY + 3, 3, COLOR_STAR_GOLD, COLOR_STAR_RED)
-                putPixel(pixels, width, height, sx, starRowY + 2, 0xFFFFFBEB.toInt())
+            val starSize = 7
+            val starSpacing = 9
+            val totalStarsWidth = (starCount * starSpacing) - 2
+            val starsStartX = nameBarRight - totalStarsWidth
+
+            for (s in 0 until starCount) {
+                val sx = starsStartX + (s * starSpacing) + (starSize / 2)
+                val sy = starRowY + (starSize / 2)
+                drawStar(pixels, width, sx, sy, 3, COLOR_STAR_GOLD, COLOR_STAR_RED)
             }
         }
 
-        // 5. Central Artwork Box
-        val artTop = if (card.isMonster && card.level > 0) starRowY + 8 else nameBarTop + nameBarHeight + 5
-        val artLeft = borderWidth + 8
+        // 5. Framed Illustration Window
+        val artTop = if (card.isMonster) starRowY + 11 else nameBarTop + nameBarHeight + 6
+        val artLeft = borderWidth + 4
         val artWidth = width - (artLeft * 2)
         val artHeight = (height * 0.44f).toInt()
 
-        // Double-beveled frame (Bronze / Gold outer, dark inner recess)
-        drawRect(pixels, width, artLeft - 3, artTop - 3, artWidth + 6, artHeight + 6, 0xFF1C2230.toInt())
-        drawRectBorder(pixels, width, artLeft - 3, artTop - 3, artWidth + 6, artHeight + 6, 0xFFD4AF37.toInt())
-        drawRectBorder(pixels, width, artLeft - 1, artTop - 1, artWidth + 2, artHeight + 2, 0xFF0B0E14.toInt())
+        // Double beveled border for art window
+        drawRectBorder(pixels, width, artLeft - 2, artTop - 2, artWidth + 4, artHeight + 4, 0xFF3D2614.toInt())
+        drawRectBorder(pixels, width, artLeft - 1, artTop - 1, artWidth + 2, artHeight + 2, 0xFF7A5835.toInt())
 
         // Render Card Illustration into Art Window with aspect-preserving sampling
         val baseSpritePixels = artPixelsOverride ?: renderCardArtwork(card, 64, 64)
@@ -257,16 +260,18 @@ object CardArtRenderer {
         // Micro-script lore lines
         val scriptLineY = textTop + 12
         val maxLines = if (card.isMonster) 3 else 5
-        for (l in 0 until maxLines) {
-            val ly = scriptLineY + (l * 4)
-            if (ly < textTop + textHeight - 12) {
-                val lineLen = if (l == maxLines - 1) (textWidth * 0.65f).toInt() else (textWidth - 8)
-                for (lx in 4 until lineLen) {
-                    val px = textLeft + lx
-                    if ((lx % 5 != 0) && px in 0 until width && ly in 0 until height) {
-                        pixels[ly * width + px] = 0xFF5D432A.toInt()
-                    }
-                }
+        val descWords = if (card.description.isNotBlank()) card.description.split(" ") else listOf(card.name)
+        var curWordIdx = 0
+        for (line in 0 until maxLines) {
+            val ly = scriptLineY + (line * 7)
+            if (ly >= textTop + textHeight - 14) break
+            var lineStr = ""
+            while (curWordIdx < descWords.size && (lineStr.length + descWords[curWordIdx].length + 1) < 26) {
+                lineStr += (if (lineStr.isEmpty()) "" else " ") + descWords[curWordIdx]
+                curWordIdx++
+            }
+            if (lineStr.isNotEmpty()) {
+                drawText3x5(pixels, width, textLeft + 4, ly, lineStr, 0xFF2A1C12.toInt())
             }
         }
 
@@ -307,7 +312,6 @@ object CardArtRenderer {
         artPixelsOverride: IntArray? = null
     ): IntArray {
         val pixels = renderFullCard(card, width, height, artPixelsOverride)
-        // Add metallic GBA holographic foil trim to borders
         val goldHighlight = 0xFFFDE047.toInt()
         val gbaTrim = 0xFFD4AF37.toInt()
         val borderWidth = (width * 0.035f).toInt().coerceAtLeast(4)
@@ -352,26 +356,24 @@ object CardArtRenderer {
             for (x in 0 until width) {
                 val dx = (x - cx) / radiusX
                 val dy = (y - cy) / radiusY
-                val dist = dx * dx + dy * dy
-                val angle = atan2(y - cy, x - cx)
-                val swirl = sin(dist * 14.0 + angle * 4.0)
-                val base = if (swirl > 0.0) brownBase else brownDark
-                pixels[y * width + x] = base
+                val dist = sqrt(dx * dx + dy * dy)
+                if (dist <= 1.0) {
+                    val angle = atan2(dy, dx)
+                    val swirl = sin(angle * 6.0 + dist * 8.0)
+                    val baseCol = if (swirl > 0.1) brownBase else brownDark
+                    pixels[y * width + x] = baseCol
+                } else {
+                    pixels[y * width + x] = outerBorder
+                }
             }
         }
 
-        // 2. Beveled Outer Border
-        val borderWidth = (width * 0.038f).toInt().coerceAtLeast(4)
+        // 2. Beveled Dark Border Frame
+        val bWidth = (width * 0.05f).toInt()
         for (y in 0 until height) {
             for (x in 0 until width) {
-                val isCorner = (x < 3 && y < 3) || (x >= width - 3 && y < 3) ||
-                               (x < 3 && y >= height - 3) || (x >= width - 3 && y >= height - 3)
-                if (isCorner) {
-                    pixels[y * width + x] = 0x00000000
-                } else if (x < borderWidth || x >= width - borderWidth || y < borderWidth || y >= height - borderWidth) {
+                if (x < bWidth || x >= width - bWidth || y < bWidth || y >= height - bWidth) {
                     pixels[y * width + x] = outerBorder
-                } else if (x == borderWidth || x == width - borderWidth - 1 || y == borderWidth || y == height - borderWidth - 1) {
-                    pixels[y * width + x] = 0xFF351C0F.toInt()
                 }
             }
         }
@@ -381,11 +383,9 @@ object CardArtRenderer {
         val innerRingR = (min(width, height) * 0.28).toInt()
         val coreVoidR = (min(width, height) * 0.20).toInt()
 
-        // Dark void portal
         drawCircle(pixels, width, cx.toInt(), cy.toInt(), outerRingR, 0xFF140C07.toInt())
         drawCircle(pixels, width, cx.toInt(), cy.toInt(), coreVoidR, blackCore)
 
-        // Outer & Inner concentric gold rings
         drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), outerRingR, goldRing)
         drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), outerRingR - 1, goldBright)
         drawCircleBorder(pixels, width, cx.toInt(), cy.toInt(), innerRingR, goldRing)
@@ -396,15 +396,12 @@ object CardArtRenderer {
         val icy = cy.toInt()
         val eyeW = (min(width, height) * 0.12).toInt().coerceAtLeast(10)
 
-        // Golden eye arch
         drawCircle(pixels, width, icx, icy, eyeW, goldRing)
         drawCircle(pixels, width, icx, icy, eyeW - 2, blackCore)
-        // Radiant iris & pupil
         drawCircle(pixels, width, icx, icy, (eyeW * 0.6).toInt(), eyeOrange)
         drawCircle(pixels, width, icx, icy, (eyeW * 0.3).toInt(), 0xFF000000.toInt())
         putPixel(pixels, width, height, icx - 1, icy - 1, 0xFFFFFFFF.toInt())
 
-        // Millennium Eye classic eyeliner lashes
         drawLine(pixels, width, icx - eyeW, icy, icx - eyeW - 3, icy - 2, goldRing)
         drawLine(pixels, width, icx + eyeW, icy, icx + eyeW + 3, icy - 2, goldRing)
         drawLine(pixels, width, icx, icy + eyeW, icx, icy + eyeW + 4, goldRing)
@@ -413,8 +410,8 @@ object CardArtRenderer {
     }
 
     /**
-     * Authentic GBC Pixel-Art Card Illustration Renderer.
-     * Generates rich, authentic pixel art matching the original Game Boy Color DDS sprites.
+     * Crisp, elegant elemental crest illustration renderer used as an offline/runtime fallback.
+     * Displays clean attribute runes and sigils with authentic palette depth.
      */
     fun renderCardArtwork(card: Card, width: Int = 64, height: Int = 64): IntArray {
         val pixels = IntArray(width * height)
@@ -425,293 +422,86 @@ object CardArtRenderer {
         val colorMid2 = palette[2]
         val colorLight = palette[3]
 
-        // 1. Fill background with dark GBC tone
+        // 1. Fill background with dark attribute tone
         pixels.fill(colorDark)
 
         val cx = width / 2
         val cy = height / 2
 
-        // Background elemental circle badge
+        // Outer elemental disc
         drawCircle(pixels, width, cx, cy, min(cx, cy) - 4, colorMid1)
+        drawCircle(pixels, width, cx, cy, min(cx, cy) - 8, colorDark)
+        drawCircleBorder(pixels, width, cx, cy, min(cx, cy) - 4, colorLight)
+        drawCircleBorder(pixels, width, cx, cy, min(cx, cy) - 8, colorMid2)
 
-        // Draw card-specific authentic pixel art
-        when (card.name) {
-            "Gale Dogra" -> {
-                drawGaleDogra(pixels, width, height)
-            }
-            "Zone Eater" -> {
-                drawZoneEater(pixels, width, height)
-            }
-            "Leghul" -> {
-                drawLeghul(pixels, width, height)
-            }
-            "Shadow Specter" -> {
-                drawShadowSpecter(pixels, width, height)
-            }
-            "Wretched Ghost of the Attic" -> {
-                drawWretchedGhost(pixels, width, height)
-            }
-            "Blue-Eyes White Dragon" -> {
-                drawBlueEyesWhiteDragon(pixels, width, height)
-            }
-            "Dark Magician" -> {
-                drawDarkMagician(pixels, width, height)
-            }
-            "Red-Eyes B. Dragon" -> {
-                drawRedEyesBlackDragon(pixels, width, height)
-            }
-            "Summoned Skull" -> {
-                drawSummonedSkull(pixels, width, height)
-            }
-            "Celtic Guardian" -> {
-                drawCelticGuardian(pixels, width, height)
-            }
-            "Curse of Dragon" -> {
-                drawCurseOfDragon(pixels, width, height)
-            }
-            "Mystical Elf" -> {
-                drawMysticalElf(pixels, width, height)
-            }
-            "Pot of Greed" -> {
-                drawPotOfGreed(pixels, width, height)
-            }
-            "Raigeki" -> {
-                drawRaigeki(pixels, width, height)
-            }
-            "Dark Hole" -> {
-                drawDarkHole(pixels, width, height)
-            }
-            "Sparks" -> {
-                drawSparks(pixels, width, height)
-            }
-            "Hinotama" -> {
-                drawHinotama(pixels, width, height)
-            }
-            "Mooyan Curry" -> {
-                drawMooyanCurry(pixels, width, height)
-            }
-            "Dian Keto the Cure Maiden" -> {
-                drawDianKeto(pixels, width, height)
-            }
-            "Mirror Force" -> {
-                drawMirrorForce(pixels, width, height)
-            }
-            "Trap Hole" -> {
-                drawTrapHole(pixels, width, height)
-            }
-            "Waboku" -> {
-                drawWaboku(pixels, width, height)
-            }
-            "Reinforcements" -> {
-                drawReinforcements(pixels, width, height)
-            }
-            "Mech Mole Zombie" -> {
-                drawMechMoleZombie(pixels, width, height)
-            }
-            "Air Marmot of Nefariousness" -> {
-                drawAirMarmot(pixels, width, height)
-            }
-            "Droll Bird" -> {
-                drawDrollBird(pixels, width, height)
-            }
-            "Kaminarikozou" -> {
-                drawKaminarikozou(pixels, width, height)
-            }
-            "Swordsman from a Foreign Land" -> {
-                drawSwordsmanForeign(pixels, width, height)
-            }
-            "Monster Eye" -> {
-                drawMonsterEye(pixels, width, height)
-            }
-            "Mechanical Spider" -> {
-                drawMechanicalSpider(pixels, width, height)
-            }
-            "Cyber-Stein" -> {
-                drawCyberStein(pixels, width, height)
-            }
-            "Jinzo #7" -> {
-                drawJinzo7(pixels, width, height)
-            }
-            "White Dolphin" -> {
-                drawWhiteDolphin(pixels, width, height)
-            }
-            "Turu-Purun" -> {
-                drawTuruPurun(pixels, width, height)
-            }
-            "Sinister Serpent" -> {
-                drawSinisterSerpent(pixels, width, height)
-            }
-            "Boo Koo" -> {
-                drawBooKoo(pixels, width, height)
-            }
-            "Fungi of the Musk" -> {
-                drawFungiMusk(pixels, width, height)
-            }
-            "Muka Muka" -> {
-                drawMukaMuka(pixels, width, height)
-            }
-            "Star Boy" -> {
-                drawStarBoy(pixels, width, height)
-            }
-            "Milus Radiant" -> {
-                drawMilusRadiant(pixels, width, height)
-            }
-            "Bone Mouse" -> {
-                drawBoneMouse(pixels, width, height)
-            }
-            "Frog The Jam" -> {
-                drawFrogTheJam(pixels, width, height)
-            }
-            "Abyss Flower" -> {
-                drawAbyssFlower(pixels, width, height)
-            }
-            "Bladefly" -> {
-                drawBladefly(pixels, width, height)
-            }
-            "Hiro's Shadow Scout" -> {
-                drawHiroShadowScout(pixels, width, height)
-            }
-            "Yamatano Dragon Scroll" -> {
-                drawYamatanoDragon(pixels, width, height)
-            }
-            "Mystery Hand" -> {
-                drawMysteryHand(pixels, width, height)
-            }
-            "Masked Clown" -> {
-                drawMaskedClown(pixels, width, height)
-            }
-            "Oscillo Hero #2" -> {
-                drawOscilloHero2(pixels, width, height)
-            }
-            "Swordsman of Landstar" -> {
-                drawSwordsmanLandstar(pixels, width, height)
-            }
-            "Mountain Warrior" -> {
-                drawMountainWarrior(pixels, width, height)
-            }
-            "Time Wizard" -> {
-                drawTimeWizard(pixels, width, height)
-            }
-            "Harpie Lady" -> {
-                drawHarpieLady(pixels, width, height)
-            }
-            "Sonic Maid" -> {
-                drawSonicMaid(pixels, width, height)
-            }
-            "White Magical Hat" -> {
-                drawWhiteMagicalHat(pixels, width, height)
-            }
-            "Morphing Jar" -> {
-                drawMorphingJar(pixels, width, height)
-            }
-            "Battle Ox" -> {
-                drawBattleOx(pixels, width, height)
-            }
-            "Hitotsu-Me Giant" -> {
-                drawHitotsuMeGiant(pixels, width, height)
-            }
-            "Ryu-Kishin" -> {
-                drawRyuKishin(pixels, width, height)
-            }
-            "Kuriboh" -> {
-                drawKuriboh(pixels, width, height)
-            }
-            "Twin-Headed Thunder Dragon" -> {
-                drawTwinHeadedThunderDragon(pixels, width, height)
-            }
-            "Zombie Dragon" -> {
-                drawZombieDragon(pixels, width, height)
-            }
-            "Flame Cerebrus" -> {
-                drawFlameCerebrus(pixels, width, height)
-            }
-            "Thousand Dragon" -> {
-                drawThousandDragon(pixels, width, height)
-            }
-            "Cyber Soldier" -> {
-                drawCyberSoldier(pixels, width, height)
-            }
-            "Jinzo" -> {
-                drawJinzo(pixels, width, height)
-            }
-            "Buster Blader" -> {
-                drawBusterBlader(pixels, width, height)
-            }
-            "Dark Magician Girl" -> {
-                drawDarkMagicianGirl(pixels, width, height)
-            }
-            "Gearfried the Iron Knight" -> {
-                drawGearfried(pixels, width, height)
-            }
-            "Gemini Elf" -> {
-                drawGeminiElf(pixels, width, height)
-            }
-            "Vorse Raider" -> {
-                drawVorseRaider(pixels, width, height)
-            }
-            "La Jinn the Mystical Genie of the Lamp" -> {
-                drawLaJinn(pixels, width, height)
-            }
-            "Giant Soldier of Stone" -> {
-                drawGiantSoldier(pixels, width, height)
-            }
-            "Man-Eater Bug" -> {
-                drawManEaterBug(pixels, width, height)
-            }
-            "Monster Reborn" -> {
-                drawMonsterReborn(pixels, width, height)
-            }
-            "Change of Heart" -> {
-                drawChangeOfHeart(pixels, width, height)
-            }
-            "Snatch Steal" -> {
-                drawSnatchSteal(pixels, width, height)
-            }
-            "Swords of Revealing Light" -> {
-                drawSwordsOfRevealingLight(pixels, width, height)
-            }
-            "Call of the Haunted" -> {
-                drawCallOfTheHaunted(pixels, width, height)
-            }
-            "Imperial Order" -> {
-                drawImperialOrder(pixels, width, height)
-            }
-            "Magic Cylinder" -> {
-                drawMagicCylinder(pixels, width, height)
-            }
-            "Cyber Harpie" -> {
-                drawCyberHarpie(pixels, width, height)
-            }
-            "Barrel Dragon" -> {
-                drawBarrelDragon(pixels, width, height)
-            }
-            "Relinquished" -> {
-                drawRelinquished(pixels, width, height)
-            }
-            "Alligator's Sword" -> {
-                drawAlligatorsSword(pixels, width, height)
+        // Attribute Crest Sigil
+        val r = (min(width, height) * 0.28f).toInt()
+        when (card.attribute) {
+            CardAttribute.LIGHT -> {
+                // Solar Starburst
+                drawCircle(pixels, width, cx, cy, r / 2, colorLight)
+                for (angle in 0 until 8) {
+                    val rad = angle * (Math.PI / 4.0)
+                    val x1 = (cx + cos(rad) * (r * 0.6)).toInt()
+                    val y1 = (cy + sin(rad) * (r * 0.6)).toInt()
+                    val x2 = (cx + cos(rad) * r).toInt()
+                    val y2 = (cy + sin(rad) * r).toInt()
+                    drawLine(pixels, width, x1, y1, x2, y2, colorLight)
+                }
+            }
+            CardAttribute.DARK -> {
+                // Crescent Moon & Void Rune
+                drawCircle(pixels, width, cx, cy, r, colorLight)
+                drawCircle(pixels, width, cx + (r * 0.45f).toInt(), cy - (r * 0.25f).toInt(), (r * 0.85f).toInt(), colorDark)
+                drawCircle(pixels, width, cx - 2, cy + 2, (r * 0.25f).toInt(), colorMid2)
+            }
+            CardAttribute.FIRE -> {
+                // Flame Crest
+                drawTriangle(pixels, width, cx, cy - r, cx - r + 3, cy + r - 2, cx + r - 3, cy + r - 2, colorMid2)
+                drawTriangle(pixels, width, cx, cy - (r * 0.7f).toInt(), cx - (r * 0.5f).toInt(), cy + r - 4, cx + (r * 0.5f).toInt(), cy + r - 4, colorLight)
+                drawCircle(pixels, width, cx, cy + (r * 0.3f).toInt(), (r * 0.35f).toInt(), colorLight)
+            }
+            CardAttribute.WATER -> {
+                // Tidal Wave Droplet
+                drawCircle(pixels, width, cx, cy + 4, r - 4, colorLight)
+                drawTriangle(pixels, width, cx, cy - r, cx - (r - 4), cy + 4, cx + (r - 4), cy + 4, colorLight)
+                drawCircle(pixels, width, cx, cy + 5, (r * 0.45f).toInt(), colorMid1)
+            }
+            CardAttribute.EARTH -> {
+                // Granite Geode Crystal
+                drawRect(pixels, width, cx - r + 4, cy - r + 4, (r * 2) - 8, (r * 2) - 8, colorMid2)
+                drawRectBorder(pixels, width, cx - r + 4, cy - r + 4, (r * 2) - 8, (r * 2) - 8, colorLight)
+                drawLine(pixels, width, cx - r + 4, cy, cx + r - 4, cy, colorLight)
+                drawLine(pixels, width, cx, cy - r + 4, cx, cy + r - 4, colorLight)
+            }
+            CardAttribute.WIND -> {
+                // Gale Vortex Spiral
+                drawCircleBorder(pixels, width, cx, cy, r, colorLight)
+                drawCircleBorder(pixels, width, cx + 2, cy - 2, (r * 0.65f).toInt(), colorMid2)
+                drawCircleBorder(pixels, width, cx - 2, cy + 2, (r * 0.35f).toInt(), colorLight)
+            }
+            CardAttribute.SPELL -> {
+                // Spell Book / Arcane Eye
+                drawRect(pixels, width, cx - r + 2, cy - (r * 0.7f).toInt(), (r * 2) - 4, (r * 1.4f).toInt(), colorMid2)
+                drawRectBorder(pixels, width, cx - r + 2, cy - (r * 0.7f).toInt(), (r * 2) - 4, (r * 1.4f).toInt(), colorLight)
+                drawLine(pixels, width, cx, cy - (r * 0.7f).toInt(), cx, cy + (r * 0.7f).toInt(), colorLight)
+                drawCircle(pixels, width, cx, cy, (r * 0.3f).toInt(), colorLight)
+            }
+            CardAttribute.TRAP -> {
+                // Trap Spikes Diamond
+                drawTriangle(pixels, width, cx, cy - r, cx - r, cy, cx + r, cy, colorLight)
+                drawTriangle(pixels, width, cx, cy + r, cx - r, cy, cx + r, cy, colorMid2)
+                drawCircle(pixels, width, cx, cy, (r * 0.35f).toInt(), 0xFFFFFFFF.toInt())
             }
             else -> {
-                // Archetype fallback based on monster type
-                when {
-                    card.isSpell -> drawSpellGlyph(pixels, width, height, colorLight, colorMid2)
-                    card.isTrap -> drawTrapGlyph(pixels, width, height, colorLight, colorMid2)
-                    card.name.contains("Dragon") -> drawDragonSprite(pixels, width, height, colorLight, colorMid2, colorDark)
-                    card.name.contains("Magician") || card.name.contains("Wizard") -> drawSpellcasterSprite(pixels, width, height, colorLight, colorMid2, colorDark)
-                    card.name.contains("Skull") || card.name.contains("Specter") || card.name.contains("Ghost") -> drawSkullSprite(pixels, width, height, colorLight, colorMid2, colorDark)
-                    card.name.contains("Warrior") || card.name.contains("Swordsman") -> drawWarriorSprite(pixels, width, height, colorLight, colorMid2, colorDark)
-                    card.name.contains("Bird") || card.name.contains("Winged") -> drawBirdSprite(pixels, width, height, colorLight, colorMid2, colorDark)
-                    else -> drawGenericMonsterSprite(pixels, width, height, colorLight, colorMid2, colorDark)
-                }
+                // Universal Star
+                drawStar(pixels, width, cx, cy, r, colorLight, colorMid2)
             }
         }
 
         return pixels
     }
 
-    /**
-     * Authentic 4-color Game Boy Color elemental palettes.
-     */
     private fun getGbcPalette(attr: CardAttribute): IntArray {
         return when (attr) {
             CardAttribute.LIGHT -> intArrayOf(0xFF181512.toInt(), 0xFF785B28.toInt(), 0xFFD4AF37.toInt(), 0xFFFFFDD0.toInt())
@@ -729,1379 +519,6 @@ object CardArtRenderer {
             else -> intArrayOf(0xFF111827.toInt(), 0xFF374151.toInt(), 0xFF9CA3AF.toInt(), 0xFFF9FAFB.toInt())
         }
     }
-
-    // =========================================================================
-    // AUTHENTIC GBC DDS PIXEL ART SPRITES
-    // =========================================================================
-
-    /**
-     * Gale Dogra: Authentic GBC pixel art matching Dark Duel Stories.
-     * Praying mantis / moth creature with green segmented abdomen, menacing compound red eyes,
-     * triangular head, mandibles, long antennae, and magnificent purple/violet wings spread wide
-     * against a cosmic starry/dithered void.
-     */
-    private fun drawGaleDogra(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-
-        // 1. Cosmic Void Background with Purple Dither Dots
-        val bgDark = 0xFF110722.toInt()
-        val bgDither1 = 0xFF3B1E54.toInt()
-        val bgDither2 = 0xFF8B5CF6.toInt()
-        val bgStar = 0xFFE9D5FF.toInt()
-
-        p.fill(bgDark)
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                if ((x + y) % 6 == 0 && (x * y) % 5 == 0) {
-                    p[y * w + x] = bgDither1
-                } else if ((x * 3 + y * 7) % 23 == 0) {
-                    p[y * w + x] = bgDither2
-                }
-            }
-        }
-        // Mystic Wind Stars
-        val stars = listOf(Pair(cx - 20, cy - 18), Pair(cx + 22, cy - 20), Pair(cx - 16, cy + 18), Pair(cx + 18, cy + 16))
-        for (s in stars) {
-            if (s.first in 0 until w && s.second in 0 until h) {
-                p[s.second * w + s.first] = bgStar
-            }
-        }
-
-        // 2. Magnificent Spread Wings (Purple / Magenta / Violet)
-        val wingDark = 0xFF3B1E54.toInt()
-        val wingMid = 0xFF7E22CE.toInt()
-        val wingLight = 0xFFC084FC.toInt()
-        val wingEdge = 0xFFE9D5FF.toInt()
-
-        // Left Wing Fan
-        drawTriangle(p, w, cx - 2, cy - 2, cx - 26, cy - 18, cx - 18, cy + 8, wingDark)
-        drawTriangle(p, w, cx - 4, cy - 4, cx - 24, cy - 16, cx - 14, cy + 4, wingMid)
-        drawTriangle(p, w, cx - 6, cy - 6, cx - 20, cy - 14, cx - 12, cy, wingLight)
-        drawLine(p, w, cx - 4, cy - 4, cx - 26, cy - 18, wingEdge)
-        drawLine(p, w, cx - 6, cy - 2, cx - 22, cy - 8, wingLight)
-
-        // Right Wing Fan
-        drawTriangle(p, w, cx + 2, cy - 2, cx + 26, cy - 18, cx + 18, cy + 8, wingDark)
-        drawTriangle(p, w, cx + 4, cy - 4, cx + 24, cy - 16, cx + 14, cy + 4, wingMid)
-        drawTriangle(p, w, cx + 6, cy - 6, cx + 20, cy - 14, cx + 12, cy, wingLight)
-        drawLine(p, w, cx + 4, cy - 4, cx + 26, cy - 18, wingEdge)
-        drawLine(p, w, cx + 6, cy - 2, cx + 22, cy - 8, wingLight)
-
-        // Lower Winglets
-        drawTriangle(p, w, cx - 4, cy + 4, cx - 18, cy + 16, cx - 8, cy + 14, wingMid)
-        drawTriangle(p, w, cx + 4, cy + 4, cx + 18, cy + 16, cx + 8, cy + 14, wingMid)
-
-        // 3. Green Segmented Mantis Body
-        val mantisDark = 0xFF052E16.toInt()
-        val mantisMid = 0xFF15803D.toInt()
-        val mantisLight = 0xFF22C55E.toInt()
-        val mantisHighlight = 0xFF86EFAC.toInt()
-
-        // Curled Ribbed Abdomen (segmented with horizontal stripes)
-        val abX = cx
-        val abY = cy + 10
-        drawCircle(p, w, abX, abY, 8, mantisMid)
-        drawCircle(p, w, abX - 1, abY + 6, 6, mantisMid)
-        drawCircle(p, w, abX - 3, abY + 11, 4, mantisDark) // curled tip
-        // Abdomen Segment Ribs
-        for (i in 0 until 4) {
-            val ry = abY - 4 + (i * 4)
-            drawLine(p, w, abX - 6 + i, ry, abX + 6 - i, ry, mantisLight)
-            drawLine(p, w, abX - 4 + i, ry + 1, abX + 4 - i, ry + 1, mantisDark)
-        }
-
-        // Thorax & Neck
-        drawRect(p, w, cx - 3, cy - 4, 6, 8, mantisMid)
-        drawRect(p, w, cx - 2, cy - 3, 4, 6, mantisLight)
-
-        // Triangular Mantis Head
-        drawTriangle(p, w, cx - 7, cy - 8, cx + 7, cy - 8, cx, cy - 2, mantisMid)
-        drawTriangle(p, w, cx - 5, cy - 8, cx + 5, cy - 8, cx, cy - 4, mantisLight)
-
-        // Compound Red Eyes
-        drawCircle(p, w, cx - 4, cy - 8, 2, 0xFFDC2626.toInt())
-        drawCircle(p, w, cx + 4, cy - 8, 2, 0xFFDC2626.toInt())
-        p[(cy - 8) * w + (cx - 4)] = 0xFFFFFFFF.toInt() // eye sparkle
-        p[(cy - 8) * w + (cx + 4)] = 0xFFFFFFFF.toInt()
-
-        // Curved Mandibles
-        drawLine(p, w, cx - 2, cy - 2, cx - 1, cy, 0xFFFDE047.toInt())
-        drawLine(p, w, cx + 2, cy - 2, cx + 1, cy, 0xFFFDE047.toInt())
-
-        // Antennae (Long sweeping backward)
-        drawLine(p, w, cx - 3, cy - 10, cx - 8, cy - 22, mantisHighlight)
-        drawLine(p, w, cx - 8, cy - 22, cx - 12, cy - 24, mantisHighlight)
-        drawLine(p, w, cx + 3, cy - 10, cx + 8, cy - 22, mantisHighlight)
-        drawLine(p, w, cx + 8, cy - 22, cx + 12, cy - 24, mantisHighlight)
-
-        // Raptorial Forelegs (Mantis Spurred Prayer Blades)
-        drawLine(p, w, cx - 3, cy - 3, cx - 9, cy + 3, mantisDark)
-        drawLine(p, w, cx - 9, cy + 3, cx - 4, cy + 7, mantisLight)
-        drawLine(p, w, cx + 3, cy - 3, cx + 9, cy + 3, mantisDark)
-        drawLine(p, w, cx + 9, cy + 3, cx + 4, cy + 7, mantisLight)
-    }
-
-    /** Zone Eater: Microscopic azure aquatic parasite with jagged maw of teeth */
-    private fun drawZoneEater(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF04182B.toInt())
-        // Aquatic energy ring
-        drawCircleBorder(p, w, cx, cy, 22, 0xFF0284C7.toInt())
-        drawCircle(p, w, cx, cy, 16, 0xFF0369A1.toInt())
-        drawCircle(p, w, cx, cy, 11, 0xFF021020.toInt()) // Void maw
-        // Sharp ivory fangs ring
-        for (i in 0 until 8) {
-            val ang = i * (Math.PI / 4.0)
-            val fx = (cx + cos(ang) * 12).toInt()
-            val fy = (cy + sin(ang) * 12).toInt()
-            drawLine(p, w, fx, fy, cx, cy, 0xFFF8FAFC.toInt())
-        }
-        // Glowing cyan tentacles
-        for (i in 0 until 6) {
-            val ang = (i * 60) * (Math.PI / 180.0)
-            val tx1 = (cx + cos(ang) * 16).toInt()
-            val ty1 = (cy + sin(ang) * 16).toInt()
-            val tx2 = (cx + cos(ang + 0.3) * 26).toInt()
-            val ty2 = (cy + sin(ang + 0.3) * 26).toInt()
-            drawLine(p, w, tx1, ty1, tx2, ty2, 0xFF38BDF8.toInt())
-        }
-    }
-
-    /** Leghul: Forest insect with emerald carapace and curved horns */
-    private fun drawLeghul(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF031A0D.toInt())
-        drawCircle(p, w, cx, cy + 6, 14, 0xFF059669.toInt())
-        drawCircle(p, w, cx, cy + 6, 11, 0xFF10B981.toInt())
-        drawCircle(p, w, cx, cy - 8, 8, 0xFF047857.toInt())
-        // Horns
-        drawLine(p, w, cx - 4, cy - 12, cx - 12, cy - 22, 0xFFFDE047.toInt())
-        drawLine(p, w, cx + 4, cy - 12, cx + 12, cy - 22, 0xFFFDE047.toInt())
-        // Golden eyes
-        drawCircle(p, w, cx - 3, cy - 8, 2, 0xFFFACC15.toInt())
-        drawCircle(p, w, cx + 3, cy - 8, 2, 0xFFFACC15.toInt())
-    }
-
-    /** Shadow Specter: Spooky purple hooded phantom with glowing yellow eyes */
-    private fun drawShadowSpecter(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F0B18.toInt())
-        // Swirling phantom mist
-        drawCircle(p, w, cx, cy + 12, 16, 0xFF2E1065.toInt())
-        // Hood
-        drawTriangle(p, w, cx - 14, cy + 10, cx + 14, cy + 10, cx, cy - 16, 0xFF581C87.toInt())
-        drawTriangle(p, w, cx - 10, cy + 6, cx + 10, cy + 6, cx, cy - 12, 0xFF7E22CE.toInt())
-        // Face Void
-        drawCircle(p, w, cx, cy - 2, 6, 0xFF000000.toInt())
-        // Piercing Yellow Specter Eyes
-        drawCircle(p, w, cx - 3, cy - 2, 2, 0xFFFACC15.toInt())
-        drawCircle(p, w, cx + 3, cy - 2, 2, 0xFFFACC15.toInt())
-    }
-
-    /** Wretched Ghost of the Attic: Pale spooky attic wraith with wide jagged grin */
-    private fun drawWretchedGhost(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF140E0A.toInt())
-        // Ghostly white body
-        drawCircle(p, w, cx, cy - 4, 15, 0xFFE2E8F0.toInt())
-        drawTriangle(p, w, cx - 12, cy, cx + 12, cy, cx, cy + 22, 0xFFCBD5E1.toInt())
-        // Hollow Black Eyes
-        drawCircle(p, w, cx - 5, cy - 6, 3, 0xFF0F172A.toInt())
-        drawCircle(p, w, cx + 5, cy - 6, 3, 0xFF0F172A.toInt())
-        // Sinister Jagged Grin
-        drawLine(p, w, cx - 7, cy + 3, cx + 7, cy + 3, 0xFF0F172A.toInt())
-        for (i in 0 until 4) {
-            val tx = cx - 5 + (i * 3)
-            drawLine(p, w, tx, cy + 1, tx, cy + 5, 0xFFEF4444.toInt())
-        }
-    }
-
-    /** Blue-Eyes White Dragon: Radiant silver dragon with piercing blue eyes */
-    private fun drawBlueEyesWhiteDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0A1526.toInt())
-        drawCircle(p, w, cx, cy, 22, 0x443B82F6.toInt())
-        // Silver Wings
-        drawTriangle(p, w, cx - 2, cy, cx - 26, cy - 18, cx - 16, cy + 10, 0xFFE2E8F0.toInt())
-        drawTriangle(p, w, cx + 2, cy, cx + 26, cy - 18, cx + 18, cy + 10, 0xFFCBD5E1.toInt())
-        // Head & Horns
-        drawCircle(p, w, cx, cy - 12, 8, 0xFFF8FAFC.toInt())
-        drawLine(p, w, cx - 4, cy - 14, cx - 14, cy - 24, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 4, cy - 14, cx + 14, cy - 24, 0xFFE2E8F0.toInt())
-        // Piercing Cyan Eyes
-        drawCircle(p, w, cx - 3, cy - 12, 2, 0xFF00E5FF.toInt())
-        drawCircle(p, w, cx + 3, cy - 12, 2, 0xFF00E5FF.toInt())
-    }
-
-    /** Dark Magician: Sorcerer in purple robes with staff */
-    private fun drawDarkMagician(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF160628.toInt())
-        drawCircleBorder(p, w, cx, cy, 20, 0xFF10B981.toInt())
-        // Robe & Hat
-        drawTriangle(p, w, cx - 12, cy + 20, cx + 12, cy + 20, cx, cy - 2, 0xFF6B21A8.toInt())
-        drawTriangle(p, w, cx - 10, cy - 8, cx + 10, cy - 8, cx, cy - 26, 0xFF581C87.toInt())
-        drawCircle(p, w, cx, cy - 6, 5, 0xFFFFDFBA.toInt())
-        // Emerald Staff
-        val stX = cx + 16
-        drawLine(p, w, stX, cy - 20, stX - 6, cy + 20, 0xFFD4AF37.toInt())
-        drawCircle(p, w, stX, cy - 20, 4, 0xFF10B981.toInt())
-    }
-
-    /** Red-Eyes B. Dragon: Menacing black dragon with ruby eyes */
-    private fun drawRedEyesBlackDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E0606.toInt())
-        drawTriangle(p, w, cx - 2, cy, cx - 24, cy - 16, cx - 14, cy + 10, 0xFF1F2937.toInt())
-        drawTriangle(p, w, cx + 2, cy, cx + 24, cy - 16, cx + 18, cy + 10, 0xFF111827.toInt())
-        drawCircle(p, w, cx, cy - 10, 7, 0xFF1F2937.toInt())
-        drawLine(p, w, cx - 4, cy - 12, cx - 12, cy - 22, 0xFF374151.toInt())
-        drawLine(p, w, cx + 4, cy - 12, cx + 12, cy - 22, 0xFF374151.toInt())
-        // Ruby Red Eyes
-        drawCircle(p, w, cx - 3, cy - 10, 2, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx + 3, cy - 10, 2, 0xFFEF4444.toInt())
-    }
-
-    /** Summoned Skull: Horned demon skeleton with lightning aura */
-    private fun drawSummonedSkull(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF190624.toInt())
-        drawLine(p, w, cx - 6, cy - 10, cx - 20, cy - 22, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 6, cy - 10, cx + 20, cy - 22, 0xFFE2E8F0.toInt())
-        drawCircle(p, w, cx, cy - 6, 8, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx - 3, cy - 6, 2, 0xFF831843.toInt())
-        drawCircle(p, w, cx + 3, cy - 6, 2, 0xFF831843.toInt())
-        // Ribcage
-        for (i in 0 until 4) {
-            val ry = cy + 4 + (i * 4)
-            drawLine(p, w, cx - 8 + i, ry, cx + 8 - i, ry, 0xFFE2E8F0.toInt())
-        }
-    }
-
-    /** Celtic Guardian: Elven swordsman with broadsword */
-    private fun drawCelticGuardian(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF042018.toInt())
-        drawTriangle(p, w, cx - 10, cy + 20, cx + 10, cy + 20, cx, cy, 0xFF059669.toInt())
-        drawCircle(p, w, cx, cy - 8, 6, 0xFFFFDFBA.toInt())
-        drawTriangle(p, w, cx - 7, cy - 8, cx + 7, cy - 8, cx, cy - 16, 0xFFFCD34D.toInt())
-        // Sword
-        val swX = cx + 14
-        drawLine(p, w, swX, cy - 18, swX, cy + 18, 0xFFE2E8F0.toInt())
-        drawLine(p, w, swX - 4, cy + 8, swX + 4, cy + 8, 0xFFF59E0B.toInt())
-    }
-
-    /** Curse of Dragon: Skeletal winged bone dragon */
-    private fun drawCurseOfDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1004.toInt())
-        drawTriangle(p, w, cx - 2, cy, cx - 24, cy - 14, cx - 14, cy + 10, 0xFF785B28.toInt())
-        drawTriangle(p, w, cx + 2, cy, cx + 24, cy - 14, cx + 14, cy + 10, 0xFF785B28.toInt())
-        drawCircle(p, w, cx, cy - 10, 7, 0xFFD4AF37.toInt())
-        drawCircle(p, w, cx - 3, cy - 10, 2, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx + 3, cy - 10, 2, 0xFFEF4444.toInt())
-    }
-
-    /** Mystical Elf: Delicate elf priestess */
-    private fun drawMysticalElf(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF062036.toInt())
-        drawCircleBorder(p, w, cx, cy - 8, 14, 0xFFFDE047.toInt())
-        drawTriangle(p, w, cx - 12, cy + 20, cx + 12, cy + 20, cx, cy, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy - 6, 6, 0xFFFFDFBA.toInt())
-        drawTriangle(p, w, cx - 7, cy - 4, cx + 7, cy - 4, cx, cy - 14, 0xFF38BDF8.toInt())
-    }
-
-    /** Pot of Greed: Grinning green earthenware jar with golden teeth */
-    private fun drawPotOfGreed(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF021B14.toInt())
-        drawCircle(p, w, cx, cy + 4, 18, 0xFF047857.toInt())
-        drawCircle(p, w, cx, cy + 4, 14, 0xFF10B981.toInt())
-        drawRect(p, w, cx - 12, cy - 14, 24, 5, 0xFFDC2626.toInt())
-        // Maniacal Grin
-        drawTriangle(p, w, cx - 10, cy + 4, cx + 10, cy + 4, cx, cy + 14, 0xFF0F172A.toInt())
-        for (i in 0 until 5) {
-            val tx = cx - 8 + (i * 4)
-            drawRect(p, w, tx, cy + 4, 2, 3, 0xFFFDE047.toInt())
-        }
-        drawCircle(p, w, cx - 5, cy - 4, 3, 0xFFDC2626.toInt())
-        drawCircle(p, w, cx + 5, cy - 4, 3, 0xFFDC2626.toInt())
-    }
-
-    /** Raigeki: Golden thunderbolt striking */
-    private fun drawRaigeki(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        p.fill(0xFF2E0808.toInt())
-        val path = listOf(Pair(cx, 8), Pair(cx - 8, 20), Pair(cx + 4, 22), Pair(cx - 6, 36), Pair(cx + 4, 38), Pair(cx, h - 6))
-        for (i in 0 until path.size - 1) {
-            val p1 = path[i]
-            val p2 = path[i + 1]
-            drawLine(p, w, p1.first, p1.second, p2.first, p2.second, 0xFFFFFFFF.toInt())
-            drawLine(p, w, p1.first + 1, p1.second, p2.first + 1, p2.second, 0xFFFDE047.toInt())
-        }
-        drawCircle(p, w, cx, h - 6, 7, 0xFFF59E0B.toInt())
-    }
-
-    /** Dark Hole: Cosmic black hole vortex */
-    private fun drawDarkHole(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2.0
-        val cy = h / 2.0
-        val maxR = w * 0.44
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                val dist = hypot(x - cx, y - cy)
-                if (dist <= maxR) {
-                    val spiral = sin(dist * 0.4 + atan2(y - cy, x - cx) * 3.0)
-                    p[y * w + x] = when {
-                        dist < maxR * 0.3 -> 0xFF000000.toInt()
-                        spiral > 0.2 -> 0xFF7C3AED.toInt()
-                        else -> 0xFF3B0764.toInt()
-                    }
-                } else {
-                    p[y * w + x] = 0xFF090616.toInt()
-                }
-            }
-        }
-    }
-
-    /** Sparks: Burst of fiery embers */
-    private fun drawSparks(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF240A04.toInt())
-        drawCircle(p, w, cx, cy, 10, 0xFFEA580C.toInt())
-        drawCircle(p, w, cx, cy, 5, 0xFFFDE047.toInt())
-        for (i in 0 until 8) {
-            val ang = i * (Math.PI / 4.0)
-            val sx = (cx + cos(ang) * 16).toInt()
-            val sy = (cy + sin(ang) * 16).toInt()
-            drawLine(p, w, cx, cy, sx, sy, 0xFFF97316.toInt())
-        }
-    }
-
-    /** Hinotama: Streaking fireball meteor */
-    private fun drawHinotama(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF260505.toInt())
-        // Flaming tail
-        drawLine(p, w, cx - 18, cy - 18, cx, cy, 0xFFEF4444.toInt())
-        drawLine(p, w, cx - 14, cy - 22, cx + 4, cy, 0xFFF97316.toInt())
-        // Fireball Core
-        drawCircle(p, w, cx + 4, cy + 4, 12, 0xFFEA580C.toInt())
-        drawCircle(p, w, cx + 4, cy + 4, 8, 0xFFFDE047.toInt())
-        drawCircle(p, w, cx + 4, cy + 4, 4, 0xFFFFFFFF.toInt())
-    }
-
-    /** Mooyan Curry: Steaming fragrant bowl of curry */
-    private fun drawMooyanCurry(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1408.toInt())
-        // Bowl
-        drawCircle(p, w, cx, cy + 6, 16, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy + 4, 13, 0xFFD97706.toInt())
-        // Steam wisps
-        drawLine(p, w, cx - 6, cy - 6, cx - 3, cy - 14, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 6, cy - 6, cx + 3, cy - 14, 0xFFE2E8F0.toInt())
-    }
-
-    /** Dian Keto: Sacred golden chalice */
-    private fun drawDianKeto(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E16.toInt())
-        drawTriangle(p, w, cx - 12, cy - 6, cx + 12, cy - 6, cx, cy + 12, 0xFFF59E0B.toInt())
-        drawRect(p, w, cx - 2, cy + 10, 4, 8, 0xFFF59E0B.toInt())
-        drawCircle(p, w, cx, cy + 18, 7, 0xFFF59E0B.toInt())
-        drawCircle(p, w, cx, cy - 6, 8, 0xFF38BDF8.toInt())
-    }
-
-    /** Mirror Force: Prismatic hexagonal shield */
-    private fun drawMirrorForce(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0E0824.toInt())
-        drawCircleBorder(p, w, cx, cy, 20, 0xFFEC4899.toInt())
-        drawCircleBorder(p, w, cx, cy, 15, 0xFF38BDF8.toInt())
-        drawCircleBorder(p, w, cx, cy, 10, 0xFFFDE047.toInt())
-        drawLine(p, w, cx - 18, cy - 18, cx + 18, cy + 18, 0xFFFFFFFF.toInt())
-        drawLine(p, w, cx + 18, cy - 18, cx - 18, cy + 18, 0xFFFFFFFF.toInt())
-    }
-
-    /** Trap Hole: Spiked stone pit trap */
-    private fun drawTrapHole(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF121214.toInt())
-        drawCircle(p, w, cx, cy, 18, 0xFF52525B.toInt())
-        drawCircle(p, w, cx, cy, 13, 0xFF000000.toInt())
-        for (i in 0 until 5) {
-            val sx = cx - 8 + (i * 4)
-            drawLine(p, w, sx, cy + 2, sx, cy + 10, 0xFF71717A.toInt())
-        }
-    }
-
-    /** Waboku: Sacred maidens radiating golden peace light */
-    private fun drawWaboku(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1404.toInt())
-        drawCircleBorder(p, w, cx, cy, 22, 0xFFFDE047.toInt())
-        drawCircle(p, w, cx, cy, 16, 0x55F59E0B.toInt())
-        drawTriangle(p, w, cx - 10, cy + 16, cx + 10, cy + 16, cx, cy - 4, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy - 8, 5, 0xFFFFDFBA.toInt())
-    }
-
-    /** Reinforcements: Winged warrior crest */
-    private fun drawReinforcements(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E0E04.toInt())
-        drawLine(p, w, cx - 16, cy - 16, cx + 16, cy + 16, 0xFFFDE047.toInt())
-        drawLine(p, w, cx + 16, cy - 16, cx - 16, cy + 16, 0xFFFDE047.toInt())
-        drawCircle(p, w, cx, cy, 10, 0xFFDC2626.toInt())
-        drawCircleBorder(p, w, cx, cy, 10, 0xFFF59E0B.toInt())
-    }
-
-    // --- OTHER DDS MONSTERS ---
-
-    private fun drawMechMoleZombie(pixels: IntArray, w: Int, h: Int) {
-        val cyanBg = 0xFF00B0F0.toInt()
-        val darkCyan = 0xFF0070B8.toInt()
-        val sparkleWhite = 0xFFFFFFFF.toInt()
-        val black = 0xFF000000.toInt()
-        val moleDark = 0xFF581515.toInt()
-        val moleMid = 0xFF882424.toInt()
-        val mouthCavity = 0xFF280404.toInt()
-        val toothWhite = 0xFFF0F8FF.toInt()
-        val goldMain = 0xFFE6B800.toInt()
-        val goldLight = 0xFFFFF066.toInt()
-        val goldDark = 0xFF997A00.toInt()
-        val armorRed = 0xFFDC2626.toInt()
-        val armorDarkRed = 0xFF991B1B.toInt()
-        val armorWhiteTrim = 0xFFF8FAFC.toInt()
-        val metalGrey = 0xFF64748B.toInt()
-
-        // 1. Cyan Electric Sky Background with retro GBC dither dots
-        for (y in 0 until h) {
-            val row = y * w
-            for (x in 0 until w) {
-                pixels[row + x] = if ((x * 7 + y * 13) % 19 == 0) darkCyan else cyanBg
-            }
-        }
-        // Background star sparkles
-        pixels[((h * 0.15).toInt() * w) + (w * 0.25).toInt()] = sparkleWhite
-        pixels[((h * 0.20).toInt() * w) + (w * 0.15).toInt()] = sparkleWhite
-        pixels[((h * 0.35).toInt() * w) + (w * 0.10).toInt()] = sparkleWhite
-        pixels[((h * 0.10).toInt() * w) + (w * 0.85).toInt()] = sparkleWhite
-
-        // 2. Red Chest Armor / Torso (Lower Section)
-        val chestTop = (h * 0.65).toInt()
-        val chestBottom = h - 1
-        for (y in chestTop..chestBottom) {
-            val prog = (y - chestTop).toFloat() / (chestBottom - chestTop)
-            val left = (w * (0.15 - 0.05 * prog)).toInt().coerceIn(0, w - 1)
-            val right = (w * (0.80 + 0.10 * prog)).toInt().coerceIn(0, w - 1)
-            for (x in left..right) {
-                val isRim = (y == chestTop || y == chestTop + 1 || x == left || x == right)
-                pixels[y * w + x] = when {
-                    isRim -> black
-                    y < chestTop + 4 -> armorWhiteTrim
-                    x < w * 0.5 -> armorRed
-                    else -> armorDarkRed
-                }
-            }
-        }
-
-        // 3. Cybernetic Mole Head & Snarling Jaw (Left/Center)
-        val headCx = (w * 0.40).toInt()
-        val headCy = (h * 0.45).toInt()
-        drawCircle(pixels, w, headCx, headCy, (w * 0.28).toInt(), moleDark)
-        drawCircle(pixels, w, headCx + 2, headCy - 2, (w * 0.24).toInt(), moleMid)
-
-        // Head mechanical brow / metal headband
-        drawLine(pixels, w, headCx - 10, headCy - 8, headCx + 8, headCy - 12, metalGrey)
-        drawLine(pixels, w, headCx - 10, headCy - 7, headCx + 8, headCy - 11, metalGrey)
-
-        // Glowing red optic / cyborg eye
-        drawCircle(pixels, w, headCx - 4, headCy - 6, 2, 0xFFFF2222.toInt())
-        pixels[(headCy - 6) * w + (headCx - 4)] = sparkleWhite
-
-        // Open Snarling Mouth (Dark Cavity + Sharp Fangs)
-        val mouthX = headCx - 2
-        val mouthY = headCy + 4
-        drawRect(pixels, w, mouthX - 8, mouthY - 4, 18, 12, mouthCavity)
-        drawRectBorder(pixels, w, mouthX - 8, mouthY - 4, 18, 12, black)
-
-        // Upper Fangs (White triangles)
-        drawLine(pixels, w, mouthX - 7, mouthY - 3, mouthX - 6, mouthY, toothWhite)
-        drawLine(pixels, w, mouthX - 3, mouthY - 3, mouthX - 2, mouthY + 1, toothWhite)
-        drawLine(pixels, w, mouthX + 1, mouthY - 3, mouthX + 2, mouthY + 1, toothWhite)
-        drawLine(pixels, w, mouthX + 5, mouthY - 3, mouthX + 6, mouthY, toothWhite)
-
-        // Lower Fangs
-        drawLine(pixels, w, mouthX - 5, mouthY + 6, mouthX - 4, mouthY + 3, toothWhite)
-        drawLine(pixels, w, mouthX - 1, mouthY + 6, mouthX, mouthY + 2, toothWhite)
-        drawLine(pixels, w, mouthX + 3, mouthY + 6, mouthX + 4, mouthY + 3, toothWhite)
-
-        // 4. Massive Golden Drill / Cannon Forearm (Upper Right)
-        val cannonBaseX = (w * 0.55).toInt()
-        val cannonBaseY = (h * 0.45).toInt()
-        val cannonTipX = (w * 0.85).toInt()
-        val cannonTipY = (h * 0.12).toInt()
-
-        // Cannon funnel body
-        drawTriangle(pixels, w, cannonBaseX - 4, cannonBaseY, cannonBaseX + 10, cannonBaseY + 6, cannonTipX + 8, cannonTipY, goldDark)
-        drawTriangle(pixels, w, cannonBaseX - 4, cannonBaseY, cannonTipX - 8, cannonTipY - 6, cannonTipX + 8, cannonTipY, goldMain)
-        drawTriangle(pixels, w, cannonBaseX, cannonBaseY - 4, cannonTipX - 4, cannonTipY - 4, cannonTipX + 4, cannonTipY - 2, goldLight)
-
-        // Hollow muzzle rim / dark opening
-        drawCircle(pixels, w, cannonTipX, cannonTipY, 5, black)
-        drawCircle(pixels, w, cannonTipX, cannonTipY, 3, goldDark)
-
-        // Mechanical Claws / Spikes atop forearm
-        drawLine(pixels, w, cannonTipX - 6, cannonTipY - 2, cannonTipX - 12, cannonTipY - 8, goldLight)
-        drawLine(pixels, w, cannonTipX - 2, cannonTipY - 4, cannonTipX - 6, cannonTipY - 14, goldLight)
-        drawLine(pixels, w, cannonTipX + 4, cannonTipY - 4, cannonTipX + 2, cannonTipY - 12, goldLight)
-
-        // Black outline definition
-        drawLine(pixels, w, cannonBaseX - 5, cannonBaseY + 1, cannonTipX - 9, cannonTipY - 6, black)
-        drawLine(pixels, w, cannonBaseX + 11, cannonBaseY + 7, cannonTipX + 9, cannonTipY + 1, black)
-    }
-
-    private fun drawAirMarmot(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1A1408.toInt())
-        // Wings
-        drawTriangle(p, w, cx - 2, cy, cx - 22, cy - 12, cx - 12, cy + 10, 0xFF785B28.toInt())
-        drawTriangle(p, w, cx + 2, cy, cx + 22, cy - 12, cx + 12, cy + 10, 0xFF785B28.toInt())
-        drawCircle(p, w, cx, cy + 2, 9, 0xFFB45309.toInt())
-        drawCircle(p, w, cx, cy - 8, 6, 0xFFF59E0B.toInt())
-    }
-
-    private fun drawDrollBird(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041B18.toInt())
-        drawCircle(p, w, cx - 4, cy + 2, 10, 0xFF10B981.toInt())
-        drawCircle(p, w, cx - 2, cy - 8, 6, 0xFF059669.toInt())
-        // Big Beak
-        drawTriangle(p, w, cx + 2, cy - 8, cx + 20, cy - 4, cx + 2, cy, 0xFFFACC15.toInt())
-    }
-
-    private fun drawKaminarikozou(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1906.toInt())
-        drawCircle(p, w, cx, cy + 4, 11, 0xFFEAB308.toInt())
-        drawCircle(p, w, cx, cy - 6, 7, 0xFFFEF08A.toInt())
-        // Spark in hand
-        drawStar(p, w, cx + 14, cy, 4, 0xFFFFFFFF.toInt(), 0xFFEAB308.toInt())
-    }
-
-    private fun drawSwordsmanForeign(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF191206.toInt())
-        // Conical straw hat
-        drawTriangle(p, w, cx - 18, cy - 6, cx + 18, cy - 6, cx, cy - 18, 0xFFD97706.toInt())
-        drawRect(p, w, cx - 8, cy - 4, 16, 18, 0xFF451A03.toInt())
-        // Katana
-        drawLine(p, w, cx + 10, cy - 10, cx + 18, cy + 18, 0xFFE2E8F0.toInt())
-    }
-
-    private fun drawMonsterEye(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF190620.toInt())
-        drawCircle(p, w, cx, cy, 18, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy, 10, 0xFFF59E0B.toInt())
-        drawCircle(p, w, cx, cy, 5, 0xFF000000.toInt())
-        // Veins
-        drawLine(p, w, cx - 14, cy - 8, cx - 8, cy - 4, 0xFFEF4444.toInt())
-        drawLine(p, w, cx + 14, cy + 8, cx + 8, cy + 4, 0xFFEF4444.toInt())
-    }
-
-    private fun drawMechanicalSpider(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF161208.toInt())
-        drawCircle(p, w, cx, cy + 4, 10, 0xFF785B28.toInt())
-        drawCircle(p, w, cx, cy - 6, 6, 0xFFD4AF37.toInt())
-        // 8 Brass legs
-        for (i in 0 until 4) {
-            val ly = cy - 8 + (i * 6)
-            drawLine(p, w, cx - 6, ly, cx - 22, ly - 4 + (i * 3), 0xFFD4AF37.toInt())
-            drawLine(p, w, cx + 6, ly, cx + 22, ly - 4 + (i * 3), 0xFFD4AF37.toInt())
-        }
-    }
-
-    private fun drawCyberStein(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F172A.toInt())
-        drawRect(p, w, cx - 10, cy - 14, 20, 26, 0xFF64748B.toInt())
-        // Neck bolts
-        drawRect(p, w, cx - 16, cy + 2, 6, 4, 0xFFCBD5E1.toInt())
-        drawRect(p, w, cx + 10, cy + 2, 6, 4, 0xFFCBD5E1.toInt())
-        // Red optic sensor
-        drawCircle(p, w, cx - 4, cy - 6, 2, 0xFFEF4444.toInt())
-    }
-
-    private fun drawJinzo7(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1A0A10.toInt())
-        drawCircle(p, w, cx, cy - 4, 11, 0xFF71717A.toInt())
-        // Red Visor
-        drawRect(p, w, cx - 8, cy - 6, 16, 4, 0xFFEF4444.toInt())
-    }
-
-    private fun drawWhiteDolphin(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF031E36.toInt())
-        drawCircle(p, w, cx, cy, 14, 0xFFF8FAFC.toInt())
-        drawTriangle(p, w, cx + 8, cy - 2, cx + 24, cy - 12, cx + 18, cy + 8, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx - 6, cy - 2, 2, 0xFF0284C7.toInt())
-    }
-
-    private fun drawTuruPurun(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF042036.toInt())
-        drawCircle(p, w, cx, cy + 4, 16, 0xFF38BDF8.toInt())
-        drawCircle(p, w, cx - 5, cy, 3, 0xFF0F172A.toInt())
-        drawCircle(p, w, cx + 5, cy, 3, 0xFF0F172A.toInt())
-    }
-
-    private fun drawSinisterSerpent(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E1C.toInt())
-        drawCircleBorder(p, w, cx, cy, 15, 0xFF10B981.toInt())
-        drawCircle(p, w, cx + 10, cy - 8, 6, 0xFF059669.toInt())
-        drawCircle(p, w, cx + 8, cy - 8, 2, 0xFFDC2626.toInt())
-    }
-
-    private fun drawBooKoo(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E0A24.toInt())
-        // Spellbook
-        drawRect(p, w, cx - 14, cy + 6, 28, 8, 0xFF785B28.toInt())
-        drawCircle(p, w, cx, cy - 4, 8, 0xFFC084FC.toInt())
-        drawTriangle(p, w, cx - 7, cy - 6, cx + 7, cy - 6, cx, cy - 20, 0xFF9333EA.toInt())
-    }
-
-    private fun drawFungiMusk(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1A0A20.toInt())
-        // Mushroom cap
-        drawCircle(p, w, cx, cy - 4, 16, 0xFF7E22CE.toInt())
-        drawRect(p, w, cx - 5, cy - 4, 10, 18, 0xFFF3E8FF.toInt())
-        // Spore dots
-        drawCircle(p, w, cx - 6, cy - 8, 2, 0xFFFACC15.toInt())
-        drawCircle(p, w, cx + 6, cy - 8, 2, 0xFFFACC15.toInt())
-    }
-
-    private fun drawMukaMuka(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1A1208.toInt())
-        drawCircle(p, w, cx, cy + 4, 14, 0xFF785B28.toInt())
-        // Stone spikes
-        drawTriangle(p, w, cx - 10, cy - 2, cx - 4, cy - 14, cx, cy - 2, 0xFFB45309.toInt())
-        drawTriangle(p, w, cx, cy - 2, cx + 4, cy - 14, cx + 10, cy - 2, 0xFFB45309.toInt())
-    }
-
-    private fun drawStarBoy(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E34.toInt())
-        drawStar(p, w, cx, cy, 14, 0xFF38BDF8.toInt(), 0xFF0284C7.toInt())
-        // Crown
-        drawTriangle(p, w, cx - 6, cy - 10, cx + 6, cy - 10, cx, cy - 18, 0xFFFDE047.toInt())
-    }
-
-    private fun drawMilusRadiant(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1408.toInt())
-        drawCircle(p, w, cx, cy + 4, 12, 0xFFFDE68A.toInt())
-        drawCircle(p, w, cx, cy - 6, 8, 0xFFFEF08A.toInt())
-        drawLine(p, w, cx - 4, cy - 12, cx - 10, cy - 20, 0xFFB45309.toInt())
-        drawLine(p, w, cx + 4, cy - 12, cx + 10, cy - 20, 0xFFB45309.toInt())
-    }
-
-    private fun drawBoneMouse(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF140D18.toInt())
-        drawCircle(p, w, cx, cy + 2, 10, 0xFFE2E8F0.toInt())
-        drawCircle(p, w, cx, cy - 8, 6, 0xFFF8FAFC.toInt())
-        drawLine(p, w, cx, cy + 12, cx + 16, cy + 18, 0xFFCBD5E1.toInt()) // tail
-    }
-
-    private fun drawFrogTheJam(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E26.toInt())
-        drawCircle(p, w, cx, cy + 4, 15, 0xFF10B981.toInt())
-        drawCircle(p, w, cx - 6, cy - 6, 4, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx + 6, cy - 6, 4, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx - 6, cy - 6, 2, 0xFF000000.toInt())
-        drawCircle(p, w, cx + 6, cy - 6, 2, 0xFF000000.toInt())
-        // Lolling red tongue
-        drawLine(p, w, cx, cy + 4, cx + 10, cy + 14, 0xFFEF4444.toInt())
-    }
-
-    private fun drawAbyssFlower(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041A10.toInt())
-        for (i in 0 until 5) {
-            val ang = i * (Math.PI * 2 / 5.0)
-            val px = (cx + cos(ang) * 14).toInt()
-            val py = (cy + sin(ang) * 14).toInt()
-            drawCircle(p, w, px, py, 6, 0xFF059669.toInt())
-        }
-        drawCircle(p, w, cx, cy, 8, 0xFFEF4444.toInt())
-    }
-
-    private fun drawBladefly(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF061E1A.toInt())
-        drawRect(p, w, cx - 2, cy - 14, 4, 28, 0xFF10B981.toInt())
-        // Scythe wings
-        drawLine(p, w, cx, cy - 4, cx - 24, cy - 16, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx, cy - 4, cx + 24, cy - 16, 0xFFE2E8F0.toInt())
-    }
-
-    private fun drawHiroShadowScout(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F0B18.toInt())
-        drawCircle(p, w, cx, cy - 4, 8, 0xFF1F2937.toInt())
-        // Ninja cowl eyes
-        drawCircle(p, w, cx - 3, cy - 4, 2, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx + 3, cy - 4, 2, 0xFFEF4444.toInt())
-        // Dagger
-        drawLine(p, w, cx + 8, cy - 2, cx + 18, cy + 14, 0xFFE2E8F0.toInt())
-    }
-
-    private fun drawYamatanoDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E1C.toInt())
-        // Ancient scroll
-        drawRect(p, w, cx - 18, cy - 14, 36, 28, 0xFFFDE68A.toInt())
-        // Serpentine dragon
-        drawCircleBorder(p, w, cx, cy, 10, 0xFF059669.toInt())
-    }
-
-    private fun drawMysteryHand(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F0B18.toInt())
-        drawCircle(p, w, cx, cy, 14, 0xFF2E1065.toInt())
-        // Spectral hand fingers
-        for (i in 0 until 4) {
-            val fx = cx - 6 + (i * 4)
-            drawLine(p, w, fx, cy + 4, fx, cy - 12, 0xFFC084FC.toInt())
-        }
-    }
-
-    private fun drawMaskedClown(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF140D1C.toInt())
-        drawCircle(p, w, cx, cy - 2, 10, 0xFFF8FAFC.toInt())
-        // Two-tone smiling mask
-        drawCircle(p, w, cx - 3, cy - 4, 2, 0xFFDC2626.toInt())
-        drawCircle(p, w, cx + 3, cy - 4, 2, 0xFF2563EB.toInt())
-        drawLine(p, w, cx - 5, cy + 2, cx + 5, cy + 2, 0xFFDC2626.toInt())
-    }
-
-    private fun drawOscilloHero2(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1A04.toInt())
-        drawCircle(p, w, cx, cy - 4, 10, 0xFFEAB308.toInt())
-        // Lightning fists
-        drawStar(p, w, cx - 14, cy + 6, 4, 0xFFFFFFFF.toInt(), 0xFFEAB308.toInt())
-        drawStar(p, w, cx + 14, cy + 6, 4, 0xFFFFFFFF.toInt(), 0xFFEAB308.toInt())
-    }
-
-    private fun drawSwordsmanLandstar(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E0E06.toInt())
-        drawCircle(p, w, cx, cy - 6, 7, 0xFFFFDFBA.toInt())
-        // Red helmet
-        drawTriangle(p, w, cx - 7, cy - 6, cx + 7, cy - 6, cx, cy - 16, 0xFFDC2626.toInt())
-        // Shield & Sword
-        drawCircle(p, w, cx - 12, cy + 4, 6, 0xFFD4AF37.toInt())
-        drawLine(p, w, cx + 8, cy - 8, cx + 16, cy + 12, 0xFFE2E8F0.toInt())
-    }
-
-    private fun drawMountainWarrior(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1C1206.toInt())
-        drawCircle(p, w, cx, cy - 6, 8, 0xFFB45309.toInt())
-        // Battleaxe
-        val axX = cx + 14
-        drawLine(p, w, axX, cy - 16, axX - 4, cy + 18, 0xFF785B28.toInt())
-        drawTriangle(p, w, axX - 2, cy - 14, axX + 8, cy - 8, axX - 2, cy - 2, 0xFFE2E8F0.toInt())
-    }
-
-    private fun drawTimeWizard(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1804.toInt())
-        // Clock face
-        drawCircle(p, w, cx, cy, 14, 0xFFFACC15.toInt())
-        drawCircle(p, w, cx, cy, 11, 0xFFFFFBEB.toInt())
-        // Clock hands
-        drawLine(p, w, cx, cy, cx, cy - 7, 0xFF000000.toInt())
-        drawLine(p, w, cx, cy, cx + 6, cy, 0xFF000000.toInt())
-    }
-
-    private fun drawHarpieLady(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E18.toInt())
-        drawTriangle(p, w, cx - 2, cy, cx - 24, cy - 14, cx - 12, cy + 10, 0xFF10B981.toInt())
-        drawTriangle(p, w, cx + 2, cy, cx + 24, cy - 14, cx + 12, cy + 10, 0xFF10B981.toInt())
-        drawCircle(p, w, cx, cy - 6, 6, 0xFFFFDFBA.toInt())
-    }
-
-    private fun drawSonicMaid(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF041E1A.toInt())
-        drawCircle(p, w, cx, cy - 6, 6, 0xFFFFDFBA.toInt())
-        drawTriangle(p, w, cx - 8, cy + 14, cx + 8, cy + 14, cx, cy, 0xFF38BDF8.toInt())
-    }
-
-    private fun drawWhiteMagicalHat(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF140D1E.toInt())
-        // White top hat
-        drawRect(p, w, cx - 8, cy - 18, 16, 12, 0xFFF8FAFC.toInt())
-        drawRect(p, w, cx - 12, cy - 6, 24, 3, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy + 2, 7, 0xFFFFDFBA.toInt())
-    }
-
-    private fun drawMorphingJar(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1408.toInt())
-        drawCircle(p, w, cx, cy + 4, 16, 0xFFB45309.toInt())
-        drawCircle(p, w, cx, cy + 2, 8, 0xFF000000.toInt())
-        drawCircle(p, w, cx - 4, cy, 2, 0xFF10B981.toInt())
-        drawCircle(p, w, cx + 4, cy, 2, 0xFF10B981.toInt())
-    }
-
-    private fun drawBattleOx(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1C1004.toInt())
-        drawCircle(p, w, cx, cy - 4, 9, 0xFF785B28.toInt())
-        // Curved bull horns
-        drawLine(p, w, cx - 6, cy - 8, cx - 18, cy - 18, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 6, cy - 8, cx + 18, cy - 18, 0xFFE2E8F0.toInt())
-        drawRect(p, w, cx - 10, cy + 4, 20, 16, 0xFF451A03.toInt())
-    }
-
-    private fun drawHitotsuMeGiant(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1C1204.toInt())
-        drawCircle(p, w, cx, cy - 6, 10, 0xFFD97706.toInt())
-        // Single giant eye
-        drawCircle(p, w, cx, cy - 6, 5, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy - 6, 2, 0xFFDC2626.toInt())
-    }
-
-    private fun drawRyuKishin(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F0B18.toInt())
-        drawCircle(p, w, cx, cy - 4, 8, 0xFF64748B.toInt())
-        drawLine(p, w, cx - 4, cy - 10, cx - 12, cy - 20, 0xFF94A3B8.toInt())
-        drawLine(p, w, cx + 4, cy - 10, cx + 12, cy - 20, 0xFF94A3B8.toInt())
-    }
-
-    private fun drawKuriboh(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF140D18.toInt())
-        drawCircle(p, w, cx, cy, 14, 0xFF785B28.toInt())
-        drawCircle(p, w, cx, cy, 11, 0xFFB45309.toInt())
-        // Round Kuriboh eyes
-        drawCircle(p, w, cx - 4, cy - 2, 3, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx + 4, cy - 2, 3, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx - 4, cy - 2, 1, 0xFF10B981.toInt())
-        drawCircle(p, w, cx + 4, cy - 2, 1, 0xFF10B981.toInt())
-    }
-
-    private fun drawTwinHeadedThunderDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1A04.toInt())
-        drawCircle(p, w, cx - 8, cy - 8, 7, 0xFFEAB308.toInt())
-        drawCircle(p, w, cx + 8, cy - 8, 7, 0xFFEAB308.toInt())
-        drawLine(p, w, cx - 8, cy - 8, cx + 8, cy - 8, 0xFFFEF08A.toInt())
-    }
-
-    private fun drawZombieDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF120E18.toInt())
-        drawCircle(p, w, cx, cy - 8, 8, 0xFF6B7280.toInt())
-        for (i in 0 until 4) {
-            val ry = cy + (i * 4)
-            drawLine(p, w, cx - 8 + i, ry, cx + 8 - i, ry, 0xFFE2E8F0.toInt())
-        }
-    }
-
-    private fun drawFlameCerebrus(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF260808.toInt())
-        drawCircle(p, w, cx - 10, cy - 6, 6, 0xFFDC2626.toInt())
-        drawCircle(p, w, cx, cy - 8, 7, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx + 10, cy - 6, 6, 0xFFDC2626.toInt())
-    }
-
-    private fun drawThousandDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF240606.toInt())
-        drawCircle(p, w, cx, cy - 8, 8, 0xFFDC2626.toInt())
-        drawLine(p, w, cx, cy - 12, cx, cy - 24, 0xFFFEF08A.toInt()) // Ivory horn
-    }
-
-    private fun drawCyberSoldier(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F172A.toInt())
-        drawRect(p, w, cx - 8, cy - 12, 16, 24, 0xFF64748B.toInt())
-        drawRect(p, w, cx - 6, cy - 8, 12, 4, 0xFF38BDF8.toInt())
-    }
-
-    // --- FALLBACK ARCHETYPE GLYPHS ---
-
-    private fun drawDragonSprite(p: IntArray, w: Int, h: Int, colMain: Int, colSec: Int, colEye: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawTriangle(p, w, cx - 14, cy - 8, cx + 14, cy - 8, cx, cy + 18, colMain)
-        drawTriangle(p, w, cx - 12, cy - 8, cx - 22, cy - 24, cx - 6, cy - 14, colSec)
-        drawTriangle(p, w, cx + 12, cy - 8, cx + 22, cy - 24, cx + 6, cy - 14, colSec)
-        drawCircle(p, w, cx - 4, cy - 4, 2, colEye)
-        drawCircle(p, w, cx + 4, cy - 4, 2, colEye)
-    }
-
-    private fun drawSpellcasterSprite(p: IntArray, w: Int, h: Int, colMain: Int, colSec: Int, colEye: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawTriangle(p, w, cx - 12, cy - 4, cx + 12, cy - 4, cx, cy - 22, colMain)
-        drawCircle(p, w, cx, cy + 2, 7, colSec)
-        drawCircle(p, w, cx - 3, cy + 2, 1, colEye)
-        drawCircle(p, w, cx + 3, cy + 2, 1, colEye)
-    }
-
-    private fun drawSkullSprite(p: IntArray, w: Int, h: Int, colMain: Int, colSec: Int, colEye: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawCircle(p, w, cx, cy - 4, 10, colMain)
-        drawCircle(p, w, cx - 4, cy - 4, 3, colEye)
-        drawCircle(p, w, cx + 4, cy - 4, 3, colEye)
-    }
-
-    private fun drawWarriorSprite(p: IntArray, w: Int, h: Int, colMain: Int, colSec: Int, colEye: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawLine(p, w, cx - 14, cy - 14, cx + 14, cy + 14, colMain)
-        drawLine(p, w, cx + 14, cy - 14, cx - 14, cy + 14, colMain)
-        drawCircle(p, w, cx, cy, 6, colSec)
-    }
-
-    private fun drawBirdSprite(p: IntArray, w: Int, h: Int, colMain: Int, colSec: Int, colEye: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawTriangle(p, w, cx, cy - 6, cx - 22, cy - 16, cx - 10, cy + 8, colMain)
-        drawTriangle(p, w, cx, cy - 6, cx + 22, cy - 16, cx + 10, cy + 8, colMain)
-        drawCircle(p, w, cx, cy - 6, 5, colSec)
-    }
-
-    private fun drawSpellGlyph(p: IntArray, w: Int, h: Int, colLight: Int, colMid: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawCircleBorder(p, w, cx, cy, 18, colLight)
-        drawStar(p, w, cx, cy, 8, colLight, colMid)
-    }
-
-    private fun drawTrapGlyph(p: IntArray, w: Int, h: Int, colLight: Int, colMid: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawCircle(p, w, cx, cy, 14, colMid)
-        drawCircle(p, w, cx, cy, 9, 0xFF000000.toInt())
-        drawTriangle(p, w, cx - 8, cy, cx + 8, cy, cx, cy - 12, colLight)
-    }
-
-    private fun drawGenericMonsterSprite(p: IntArray, w: Int, h: Int, colMain: Int, colSec: Int, colEye: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        drawCircle(p, w, cx, cy, 12, colMain)
-        drawCircle(p, w, cx, cy, 8, colSec)
-        drawCircle(p, w, cx - 3, cy - 2, 2, colEye)
-        drawCircle(p, w, cx + 3, cy - 2, 2, colEye)
-    }
-
-    /** Jinzo: Psycho-shocker cyborg with cyber visor and cranial conductors */
-    private fun drawJinzo(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1035.toInt())
-        // Cranial conductors / psycho energy aura
-        drawCircleBorder(p, w, cx, cy, 24, 0xFF9333EA.toInt())
-        drawCircleBorder(p, w, cx, cy, 20, 0xFFA855F7.toInt())
-        // Chrome cyber skull
-        drawCircle(p, w, cx, cy - 2, 14, 0xFFCBD5E1.toInt())
-        drawRect(p, w, cx - 10, cy, 20, 10, 0xFF94A3B8.toInt())
-        // Red psycho-shocker visor
-        drawRect(p, w, cx - 12, cy - 5, 24, 5, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx - 5, cy - 3, 2, 0xFFFFFFFF.toInt())
-        drawCircle(p, w, cx + 5, cy - 3, 2, 0xFFFFFFFF.toInt())
-        // Cranial node lines
-        drawLine(p, w, cx - 8, cy - 16, cx - 4, cy - 22, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 8, cy - 16, cx + 4, cy - 22, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx, cy - 16, cx, cy - 24, 0xFF38BDF8.toInt())
-    }
-
-    /** Buster Blader: Armored dragon slayer warrior with golden broadsword */
-    private fun drawBusterBlader(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1C1917.toInt())
-        // Crimson cape
-        drawTriangle(p, w, cx - 18, cy + 20, cx + 18, cy + 20, cx, cy - 8, 0xFF991B1B.toInt())
-        // Steel armor torso & helmet
-        drawCircle(p, w, cx, cy - 8, 10, 0xFF475569.toInt())
-        drawTriangle(p, w, cx - 6, cy - 18, cx + 6, cy - 18, cx, cy - 8, 0xFF64748B.toInt())
-        // Golden visor
-        drawRect(p, w, cx - 6, cy - 10, 12, 3, 0xFFFBBF24.toInt())
-        // Dragon Destroyer Broadsword
-        drawLine(p, w, cx + 6, cy - 24, cx + 6, cy + 18, 0xFFF59E0B.toInt())
-        drawLine(p, w, cx + 7, cy - 24, cx + 7, cy + 18, 0xFFFEF3C7.toInt())
-        drawLine(p, w, cx + 1, cy + 4, cx + 12, cy + 4, 0xFFD97706.toInt()) // crossguard
-    }
-
-    /** Dark Magician Girl: Magical apprentice with pink wizard hat and wand */
-    private fun drawDarkMagicianGirl(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF2E1065.toInt())
-        // Golden blonde hair
-        drawCircle(p, w, cx, cy, 14, 0xFFFDE047.toInt())
-        // Cute face
-        drawCircle(p, w, cx, cy - 2, 8, 0xFFFFEDD5.toInt())
-        drawCircle(p, w, cx - 3, cy - 3, 1, 0xFF2563EB.toInt())
-        drawCircle(p, w, cx + 3, cy - 3, 1, 0xFF2563EB.toInt())
-        // Pink pointed witch hat with gold trim
-        drawTriangle(p, w, cx - 16, cy - 4, cx + 16, cy - 4, cx + 8, cy - 26, 0xFFEC4899.toInt())
-        drawLine(p, w, cx - 16, cy - 4, cx + 16, cy - 4, 0xFFFACC15.toInt())
-        // Blue cape and star wand
-        drawTriangle(p, w, cx - 12, cy + 22, cx + 12, cy + 22, cx, cy + 6, 0xFF3B82F6.toInt())
-        drawLine(p, w, cx + 8, cy - 14, cx + 18, cy + 16, 0xFFFDE047.toInt())
-        drawStar(p, w, cx + 8, cy - 14, 4, 0xFFFDE047.toInt(), 0xFFFFFFFF.toInt())
-    }
-
-    /** Gearfried the Iron Knight: Indestructible iron plate armor warrior */
-    private fun drawGearfried(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E293B.toInt())
-        // Heavy iron body
-        drawRect(p, w, cx - 12, cy - 6, 24, 22, 0xFF64748B.toInt())
-        drawRectBorder(p, w, cx - 12, cy - 6, 24, 22, 0xFF334155.toInt())
-        // Iron horned helmet
-        drawCircle(p, w, cx, cy - 12, 9, 0xFF94A3B8.toInt())
-        drawLine(p, w, cx - 8, cy - 12, cx - 16, cy - 22, 0xFFCBD5E1.toInt())
-        drawLine(p, w, cx + 8, cy - 12, cx + 16, cy - 22, 0xFFCBD5E1.toInt())
-        // Glowing cyan eye slit
-        drawRect(p, w, cx - 5, cy - 13, 10, 2, 0xFF06B6D4.toInt())
-        // Heavy steel broadsword
-        drawLine(p, w, cx + 12, cy - 20, cx + 12, cy + 16, 0xFFE2E8F0.toInt())
-    }
-
-    /** Gemini Elf: Mystic elven twins wielding arcane staves */
-    private fun drawGeminiElf(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF064E3B.toInt())
-        // Left Elf (Emerald robe)
-        drawCircle(p, w, cx - 8, cy - 6, 7, 0xFFFFEDD5.toInt())
-        drawTriangle(p, w, cx - 16, cy + 18, cx, cy + 18, cx - 8, cy + 2, 0xFF10B981.toInt())
-        drawCircle(p, w, cx - 8, cy - 10, 6, 0xFFFDE047.toInt()) // hair
-        // Right Elf (Violet robe)
-        drawCircle(p, w, cx + 8, cy - 6, 7, 0xFFFFEDD5.toInt())
-        drawTriangle(p, w, cx, cy + 18, cx + 16, cy + 18, cx + 8, cy + 2, 0xFF8B5CF6.toInt())
-        drawCircle(p, w, cx + 8, cy - 10, 6, 0xFFFDE047.toInt()) // hair
-        // Twin magic staves
-        drawLine(p, w, cx - 18, cy - 18, cx - 12, cy + 20, 0xFFFACC15.toInt())
-        drawLine(p, w, cx + 18, cy - 18, cx + 12, cy + 20, 0xFFFACC15.toInt())
-    }
-
-    /** Vorse Raider: Dark scythe-wielding beast-warrior */
-    private fun drawVorseRaider(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF18181B.toInt())
-        // Beast-warrior muscular torso
-        drawTriangle(p, w, cx - 14, cy + 18, cx + 14, cy + 18, cx, cy - 8, 0xFF3F3F46.toInt())
-        // Horned dark helm & red eyes
-        drawCircle(p, w, cx, cy - 10, 8, 0xFF18181B.toInt())
-        drawLine(p, w, cx - 6, cy - 12, cx - 14, cy - 24, 0xFF71717A.toInt())
-        drawLine(p, w, cx + 6, cy - 12, cx + 14, cy - 24, 0xFF71717A.toInt())
-        drawCircle(p, w, cx - 3, cy - 10, 2, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx + 3, cy - 10, 2, 0xFFEF4444.toInt())
-        // Giant curved battle scythe
-        drawLine(p, w, cx + 8, cy + 18, cx + 14, cy - 20, 0xFFE4E4E7.toInt())
-        drawLine(p, w, cx + 14, cy - 20, cx + 2, cy - 22, 0xFFDC2626.toInt())
-    }
-
-    /** La Jinn: Fiend emerging from a glowing golden magic lamp */
-    private fun drawLaJinn(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF2E1065.toInt())
-        // Purple smoke genie torso
-        drawCircle(p, w, cx, cy - 8, 12, 0xFF7C3AED.toInt())
-        drawCircle(p, w, cx, cy - 12, 8, 0xFF6D28D9.toInt())
-        drawCircle(p, w, cx - 3, cy - 12, 2, 0xFFFACC15.toInt()) // yellow eyes
-        drawCircle(p, w, cx + 3, cy - 12, 2, 0xFFFACC15.toInt())
-        // Golden magic lamp
-        drawRect(p, w, cx - 12, cy + 12, 24, 8, 0xFFEAB308.toInt())
-        drawLine(p, w, cx + 10, cy + 14, cx + 18, cy + 8, 0xFFFDE047.toInt()) // spout
-    }
-
-    /** Giant Soldier of Stone: Heavy megalithic warrior with stone club */
-    private fun drawGiantSoldier(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF27272A.toInt())
-        // Megalith rock torso
-        drawRect(p, w, cx - 14, cy - 4, 28, 24, 0xFF78716C.toInt())
-        drawRect(p, w, cx - 8, cy - 18, 16, 14, 0xFFA8A29E.toInt()) // stone head
-        drawRect(p, w, cx - 5, cy - 12, 10, 3, 0xFF1C1917.toInt()) // eye line
-        // Heavy stone round shield
-        drawCircle(p, w, cx - 14, cy + 4, 8, 0xFF57534E.toInt())
-        drawCircleBorder(p, w, cx - 14, cy + 4, 8, 0xFFD6D3D1.toInt())
-    }
-
-    /** Man-Eater Bug: Razor-mandibled predator insect */
-    private fun drawManEaterBug(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF14532D.toInt())
-        // Segmented emerald carapace
-        drawCircle(p, w, cx, cy + 6, 12, 0xFF15803D.toInt())
-        drawCircle(p, w, cx, cy - 6, 8, 0xFF16A34A.toInt())
-        // Glowing compound eyes
-        drawCircle(p, w, cx - 4, cy - 8, 2, 0xFFFACC15.toInt())
-        drawCircle(p, w, cx + 4, cy - 8, 2, 0xFFFACC15.toInt())
-        // Deadly ivory pincers
-        drawLine(p, w, cx - 5, cy - 8, cx - 12, cy - 16, 0xFFF8FAFC.toInt())
-        drawLine(p, w, cx + 5, cy - 8, cx + 12, cy - 16, 0xFFF8FAFC.toInt())
-    }
-
-    /** Monster Reborn: Golden Egyptian Ankh with radiant resurrection rays */
-    private fun drawMonsterReborn(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF042F2E.toInt())
-        // Divine sunburst
-        drawCircleBorder(p, w, cx, cy, 22, 0xFF2DD4BF.toInt())
-        drawCircleBorder(p, w, cx, cy, 18, 0xFF14B8A6.toInt())
-        // Sacred Ankh (Top loop)
-        drawCircleBorder(p, w, cx, cy - 8, 8, 0xFFFACC15.toInt())
-        drawCircleBorder(p, w, cx, cy - 8, 7, 0xFFFEF08A.toInt())
-        // Horizontal bar
-        drawRect(p, w, cx - 12, cy, 24, 4, 0xFFFACC15.toInt())
-        // Vertical shaft
-        drawRect(p, w, cx - 2, cy, 5, 20, 0xFFFACC15.toInt())
-    }
-
-    /** Change of Heart: Split white angel wing and dark bat demon wing */
-    private fun drawChangeOfHeart(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF18181B.toInt())
-        // Central hovering split heart
-        drawCircle(p, w, cx - 4, cy, 6, 0xFFFFFFFF.toInt()) // pure side
-        drawCircle(p, w, cx + 4, cy, 6, 0xFF7C3AED.toInt()) // dark side
-        // Left feathered angel wing
-        drawTriangle(p, w, cx - 6, cy - 4, cx - 22, cy - 18, cx - 18, cy + 12, 0xFFF8FAFC.toInt())
-        // Right bat demon wing
-        drawTriangle(p, w, cx + 6, cy - 4, cx + 22, cy - 18, cx + 18, cy + 12, 0xFF6D28D9.toInt())
-    }
-
-    /** Snatch Steal: Golden puppeteer strings reaching toward a glowing heart */
-    private fun drawSnatchSteal(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF042F2E.toInt())
-        // Control strings descending from above
-        drawLine(p, w, cx - 12, 4, cx - 4, cy - 4, 0xFFFDE047.toInt())
-        drawLine(p, w, cx, 4, cx, cy - 4, 0xFFFDE047.toInt())
-        drawLine(p, w, cx + 12, 4, cx + 4, cy - 4, 0xFFFDE047.toInt())
-        // Captive glowing heart
-        drawCircle(p, w, cx - 5, cy + 4, 7, 0xFFEF4444.toInt())
-        drawCircle(p, w, cx + 5, cy + 4, 7, 0xFFEF4444.toInt())
-        drawTriangle(p, w, cx - 10, cy + 6, cx + 10, cy + 6, cx, cy + 18, 0xFFDC2626.toInt())
-    }
-
-    /** Swords of Revealing Light: Three radiant sacred swords descending */
-    private fun drawSwordsOfRevealingLight(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF0F172A.toInt())
-        // Radiant beams of light
-        for (i in -1..1) {
-            val sx = cx + (i * 12)
-            drawLine(p, w, sx, 6, sx, h - 8, 0xFFFEF08A.toInt())
-            drawRect(p, w, sx - 1, 10, 3, 34, 0xFFFACC15.toInt())
-            drawLine(p, w, sx - 5, 20, sx + 5, 20, 0xFFEAB308.toInt()) // crossguard
-            drawCircle(p, w, sx, 8, 3, 0xFFFFFFFF.toInt()) // hilt sparkle
-        }
-    }
-
-    /** Call of the Haunted: Mist-shrouded gravestone with emerging skeletal arm */
-    private fun drawCallOfTheHaunted(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1035.toInt())
-        // Gravestone arch
-        drawRect(p, w, cx - 12, cy - 10, 24, 26, 0xFF475569.toInt())
-        drawCircle(p, w, cx, cy - 10, 12, 0xFF475569.toInt())
-        // RIP cross
-        drawLine(p, w, cx, cy - 14, cx, cy + 2, 0xFF94A3B8.toInt())
-        drawLine(p, w, cx - 6, cy - 8, cx + 6, cy - 8, 0xFF94A3B8.toInt())
-        // Rising skeletal hand in ghostly purple mist
-        drawLine(p, w, cx + 10, cy + 22, cx + 14, cy + 8, 0xFFF8FAFC.toInt())
-        drawCircle(p, w, cx, cy + 18, 14, 0xFF8B5CF6.toInt()) // mist
-    }
-
-    /** Imperial Order: Royal imperial seal prohibiting all spells */
-    private fun drawImperialOrder(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF450A0A.toInt())
-        // Gold seal medallion
-        drawCircle(p, w, cx, cy, 20, 0xFFF59E0B.toInt())
-        drawCircle(p, w, cx, cy, 16, 0xFFB45309.toInt())
-        // Prohibition cross
-        drawLine(p, w, cx - 10, cy - 10, cx + 10, cy + 10, 0xFFDC2626.toInt())
-        drawLine(p, w, cx + 10, cy - 10, cx - 10, cy + 10, 0xFFDC2626.toInt())
-    }
-
-    /** Magic Cylinder: Twin arcane cylinders reflecting incoming attack */
-    private fun drawMagicCylinder(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF1E1B4B.toInt())
-        // Left Cylinder
-        drawRect(p, w, cx - 18, cy - 12, 10, 24, 0xFF818CF8.toInt())
-        drawCircle(p, w, cx - 13, cy - 12, 5, 0xFFC7D2FE.toInt())
-        // Right Cylinder
-        drawRect(p, w, cx + 8, cy - 12, 10, 24, 0xFF818CF8.toInt())
-        drawCircle(p, w, cx + 13, cy - 12, 5, 0xFFC7D2FE.toInt())
-        // Deflected magic energy sphere
-        drawCircle(p, w, cx, cy, 6, 0xFFF43F5E.toInt())
-        drawCircle(p, w, cx, cy, 3, 0xFFFFFFFF.toInt())
-    }
-
-    /** Cyber Harpie: Feathered warrior fitted with titanium assault visor */
-    private fun drawCyberHarpie(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF064E3B.toInt())
-        // Emerald wings
-        drawTriangle(p, w, cx, cy - 6, cx - 22, cy - 16, cx - 10, cy + 14, 0xFF10B981.toInt())
-        drawTriangle(p, w, cx, cy - 6, cx + 22, cy - 16, cx + 10, cy + 14, 0xFF10B981.toInt())
-        // Cyber silver visor & armor
-        drawCircle(p, w, cx, cy - 6, 6, 0xFFE2E8F0.toInt())
-        drawRect(p, w, cx - 6, cy - 7, 12, 3, 0xFFEF4444.toInt()) // ruby sensor
-    }
-
-    /** Barrel Dragon: Triple chrome rotating gun barrels */
-    private fun drawBarrelDragon(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF18181B.toInt())
-        // Mechanical dragon skull
-        drawCircle(p, w, cx, cy, 14, 0xFF475569.toInt())
-        // Triple cannon barrels
-        drawRect(p, w, cx - 14, cy - 14, 8, 14, 0xFF94A3B8.toInt())
-        drawRect(p, w, cx + 6, cy - 14, 8, 14, 0xFF94A3B8.toInt())
-        drawRect(p, w, cx - 4, cy - 20, 8, 14, 0xFFCBD5E1.toInt())
-        // Red targeting laser
-        drawCircle(p, w, cx, cy + 4, 3, 0xFFEF4444.toInt())
-    }
-
-    /** Relinquished: Grotesque ritual eyeball encased in shadowy claw */
-    private fun drawRelinquished(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF18181B.toInt())
-        // Shadow core
-        drawCircle(p, w, cx, cy, 16, 0xFF312E81.toInt())
-        // All-seeing illusion eye
-        drawCircle(p, w, cx, cy, 10, 0xFFFEF08A.toInt())
-        drawCircle(p, w, cx, cy, 5, 0xFFDC2626.toInt())
-        drawCircle(p, w, cx, cy, 2, 0xFF000000.toInt())
-    }
-
-    /** Alligator's Sword: Reptilian warrior with broad cutlass */
-    private fun drawAlligatorsSword(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF14532D.toInt())
-        // Green reptilian head & maw
-        drawCircle(p, w, cx, cy - 4, 10, 0xFF15803D.toInt())
-        drawRect(p, w, cx - 12, cy - 2, 14, 6, 0xFF16A34A.toInt())
-        drawCircle(p, w, cx - 4, cy - 7, 2, 0xFFFACC15.toInt())
-        // Pirate cutlass
-        drawLine(p, w, cx + 8, cy - 18, cx + 12, cy + 14, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 4, cy + 2, cx + 14, cy + 2, 0xFFF59E0B.toInt())
-    }
-
-    // =========================================================================
-    // PRIMITIVE DRAWING UTILITIES
-    // =========================================================================
 
     private fun getAttributeColor(attr: CardAttribute): Int {
         return when (attr) {

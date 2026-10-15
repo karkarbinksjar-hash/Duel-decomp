@@ -97,8 +97,9 @@ fun CardDetailDialog(
                         verticalAlignment = Alignment.Top
                     ) {
                         // Framed Monster Pixel Art Window with Purple/Dark double border
+                        val cropArtwork = com.yugioh.recomp.core.rom.rememberCardArtwork(card, isFullCard = false)
                         val upscaledSprite = RomAssetCache.getCardSpriteUpscaled(card.id, scale = 4)
-                        val spriteBitmap = BitmapUtils.spriteToImageBitmap(upscaledSprite)
+                        val spriteBitmap = cropArtwork ?: BitmapUtils.spriteToImageBitmap(upscaledSprite)
 
                         Box(
                             modifier = Modifier
@@ -330,7 +331,8 @@ fun CardDetailDialog(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Full Card Texture
-                    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+                    val officialFull = com.yugioh.recomp.core.rom.rememberCardArtwork(card, isFullCard = true)
+                    val fullCardBitmap = officialFull ?: BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
 
                     Box(
                         modifier = Modifier

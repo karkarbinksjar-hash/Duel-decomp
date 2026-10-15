@@ -294,7 +294,7 @@ private fun DeckCardItem(
     onLongClick: () -> Unit
 ) {
     val isOverLevel = card.deckCost > duelistLevel
-    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+    val fullCardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
 
     Surface(
         color = Color(0xFF131722),

@@ -114,7 +114,7 @@ private fun GraveyardCardRow(
     card: Card,
     onClick: () -> Unit
 ) {
-    val fullCardBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardFullTexture(card.id))
+    val fullCardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
 
     Surface(
         color = Color(0xFF0F121C),
