@@ -941,16 +941,108 @@ object CardArtRenderer {
 
     // --- OTHER DDS MONSTERS ---
 
-    private fun drawMechMoleZombie(p: IntArray, w: Int, h: Int) {
-        val cx = w / 2
-        val cy = h / 2
-        p.fill(0xFF140B1A.toInt())
-        drawCircle(p, w, cx, cy + 4, 12, 0xFF52525B.toInt())
-        drawCircle(p, w, cx, cy - 6, 8, 0xFF71717A.toInt())
-        drawCircle(p, w, cx - 3, cy - 6, 2, 0xFFEF4444.toInt()) // Bionic eye
-        // Steel claws
-        drawLine(p, w, cx - 10, cy + 8, cx - 18, cy + 14, 0xFFE2E8F0.toInt())
-        drawLine(p, w, cx + 10, cy + 8, cx + 18, cy + 14, 0xFFE2E8F0.toInt())
+    private fun drawMechMoleZombie(pixels: IntArray, w: Int, h: Int) {
+        val cyanBg = 0xFF00B0F0.toInt()
+        val darkCyan = 0xFF0070B8.toInt()
+        val sparkleWhite = 0xFFFFFFFF.toInt()
+        val black = 0xFF000000.toInt()
+        val moleDark = 0xFF581515.toInt()
+        val moleMid = 0xFF882424.toInt()
+        val mouthCavity = 0xFF280404.toInt()
+        val toothWhite = 0xFFF0F8FF.toInt()
+        val goldMain = 0xFFE6B800.toInt()
+        val goldLight = 0xFFFFF066.toInt()
+        val goldDark = 0xFF997A00.toInt()
+        val armorRed = 0xFFDC2626.toInt()
+        val armorDarkRed = 0xFF991B1B.toInt()
+        val armorWhiteTrim = 0xFFF8FAFC.toInt()
+        val metalGrey = 0xFF64748B.toInt()
+
+        // 1. Cyan Electric Sky Background with retro GBC dither dots
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                pixels[row + x] = if ((x * 7 + y * 13) % 19 == 0) darkCyan else cyanBg
+            }
+        }
+        // Background star sparkles
+        pixels[((h * 0.15).toInt() * w) + (w * 0.25).toInt()] = sparkleWhite
+        pixels[((h * 0.20).toInt() * w) + (w * 0.15).toInt()] = sparkleWhite
+        pixels[((h * 0.35).toInt() * w) + (w * 0.10).toInt()] = sparkleWhite
+        pixels[((h * 0.10).toInt() * w) + (w * 0.85).toInt()] = sparkleWhite
+
+        // 2. Red Chest Armor / Torso (Lower Section)
+        val chestTop = (h * 0.65).toInt()
+        val chestBottom = h - 1
+        for (y in chestTop..chestBottom) {
+            val prog = (y - chestTop).toFloat() / (chestBottom - chestTop)
+            val left = (w * (0.15 - 0.05 * prog)).toInt().coerceIn(0, w - 1)
+            val right = (w * (0.80 + 0.10 * prog)).toInt().coerceIn(0, w - 1)
+            for (x in left..right) {
+                val isRim = (y == chestTop || y == chestTop + 1 || x == left || x == right)
+                pixels[y * w + x] = when {
+                    isRim -> black
+                    y < chestTop + 4 -> armorWhiteTrim
+                    x < w * 0.5 -> armorRed
+                    else -> armorDarkRed
+                }
+            }
+        }
+
+        // 3. Cybernetic Mole Head & Snarling Jaw (Left/Center)
+        val headCx = (w * 0.40).toInt()
+        val headCy = (h * 0.45).toInt()
+        drawCircle(pixels, w, headCx, headCy, (w * 0.28).toInt(), moleDark)
+        drawCircle(pixels, w, headCx + 2, headCy - 2, (w * 0.24).toInt(), moleMid)
+
+        // Head mechanical brow / metal headband
+        drawLine(pixels, w, headCx - 10, headCy - 8, headCx + 8, headCy - 12, metalGrey)
+        drawLine(pixels, w, headCx - 10, headCy - 7, headCx + 8, headCy - 11, metalGrey)
+
+        // Glowing red optic / cyborg eye
+        drawCircle(pixels, w, headCx - 4, headCy - 6, 2, 0xFFFF2222.toInt())
+        pixels[(headCy - 6) * w + (headCx - 4)] = sparkleWhite
+
+        // Open Snarling Mouth (Dark Cavity + Sharp Fangs)
+        val mouthX = headCx - 2
+        val mouthY = headCy + 4
+        drawRect(pixels, w, mouthX - 8, mouthY - 4, 18, 12, mouthCavity)
+        drawRectBorder(pixels, w, mouthX - 8, mouthY - 4, 18, 12, black)
+
+        // Upper Fangs (White triangles)
+        drawLine(pixels, w, mouthX - 7, mouthY - 3, mouthX - 6, mouthY, toothWhite)
+        drawLine(pixels, w, mouthX - 3, mouthY - 3, mouthX - 2, mouthY + 1, toothWhite)
+        drawLine(pixels, w, mouthX + 1, mouthY - 3, mouthX + 2, mouthY + 1, toothWhite)
+        drawLine(pixels, w, mouthX + 5, mouthY - 3, mouthX + 6, mouthY, toothWhite)
+
+        // Lower Fangs
+        drawLine(pixels, w, mouthX - 5, mouthY + 6, mouthX - 4, mouthY + 3, toothWhite)
+        drawLine(pixels, w, mouthX - 1, mouthY + 6, mouthX, mouthY + 2, toothWhite)
+        drawLine(pixels, w, mouthX + 3, mouthY + 6, mouthX + 4, mouthY + 3, toothWhite)
+
+        // 4. Massive Golden Drill / Cannon Forearm (Upper Right)
+        val cannonBaseX = (w * 0.55).toInt()
+        val cannonBaseY = (h * 0.45).toInt()
+        val cannonTipX = (w * 0.85).toInt()
+        val cannonTipY = (h * 0.12).toInt()
+
+        // Cannon funnel body
+        drawTriangle(pixels, w, cannonBaseX - 4, cannonBaseY, cannonBaseX + 10, cannonBaseY + 6, cannonTipX + 8, cannonTipY, goldDark)
+        drawTriangle(pixels, w, cannonBaseX - 4, cannonBaseY, cannonTipX - 8, cannonTipY - 6, cannonTipX + 8, cannonTipY, goldMain)
+        drawTriangle(pixels, w, cannonBaseX, cannonBaseY - 4, cannonTipX - 4, cannonTipY - 4, cannonTipX + 4, cannonTipY - 2, goldLight)
+
+        // Hollow muzzle rim / dark opening
+        drawCircle(pixels, w, cannonTipX, cannonTipY, 5, black)
+        drawCircle(pixels, w, cannonTipX, cannonTipY, 3, goldDark)
+
+        // Mechanical Claws / Spikes atop forearm
+        drawLine(pixels, w, cannonTipX - 6, cannonTipY - 2, cannonTipX - 12, cannonTipY - 8, goldLight)
+        drawLine(pixels, w, cannonTipX - 2, cannonTipY - 4, cannonTipX - 6, cannonTipY - 14, goldLight)
+        drawLine(pixels, w, cannonTipX + 4, cannonTipY - 4, cannonTipX + 2, cannonTipY - 12, goldLight)
+
+        // Black outline definition
+        drawLine(pixels, w, cannonBaseX - 5, cannonBaseY + 1, cannonTipX - 9, cannonTipY - 6, black)
+        drawLine(pixels, w, cannonBaseX + 11, cannonBaseY + 7, cannonTipX + 9, cannonTipY + 1, black)
     }
 
     private fun drawAirMarmot(p: IntArray, w: Int, h: Int) {

@@ -102,9 +102,9 @@ class DuelEngine {
      * Draws one card from the deck into the hand.
      * In Dark Duel Stories (GBC), a duelist cannot draw if their hand contains 5 cards.
      */
-    fun drawCard(isPlayer: Boolean): Card? {
+    fun drawCard(isPlayer: Boolean, ignoreHandLimit: Boolean = false): Card? {
         val duelist = if (isPlayer) player else opponent
-        if (duelist.hand.size >= 5) {
+        if (!ignoreHandLimit && duelist.hand.size >= 5) {
             log("${duelist.name}'s hand is at maximum capacity (5 cards). No card drawn.")
             return null
         }
@@ -257,8 +257,8 @@ class DuelEngine {
 
         when (card.name) {
             "Pot of Greed" -> {
-                drawCard(isPlayer)
-                drawCard(isPlayer)
+                drawCard(isPlayer, ignoreHandLimit = true)
+                drawCard(isPlayer, ignoreHandLimit = true)
             }
             "Raigeki" -> {
                 val opp = if (isPlayer) opponent else player
@@ -620,10 +620,15 @@ class DuelEngine {
         val steps = mutableListOf<AiTurnStep>()
         if (isPlayerTurn || winner != null) return steps
 
-        // 1. Draw Phase
+        // 1. Draw Phase (Authentic DDS 5-card hand refill)
         steps.add(AiTurnStep.PhaseTransition(DuelPhase.DRAW_PHASE, "${opponent.name}'s Turn - Draw Phase"))
-        val nextDrawCard = opponent.deck.firstOrNull()
-        steps.add(AiTurnStep.Draw(nextDrawCard, "${opponent.name} draws a card."))
+        val drawsNeeded = (5 - opponent.hand.size).coerceAtLeast(0)
+        for (d in 0 until drawsNeeded) {
+            val nextCard = opponent.deck.getOrNull(d)
+            if (nextCard != null) {
+                steps.add(AiTurnStep.Draw(nextCard, "${opponent.name} draws a card."))
+            }
+        }
 
         // 2. Main Phase 1
         steps.add(AiTurnStep.PhaseTransition(DuelPhase.MAIN_PHASE_1, "${opponent.name} enters Main Phase 1"))
@@ -647,11 +652,10 @@ class DuelEngine {
             }
         }
 
-        // Monsters to Summon
+        // Monsters to Summon (Authentic DDS rule: no tributes required!)
         val summonableMonster = opponent.hand
             .filter { it.card.isMonster }
-            .sortedByDescending { it.card.atk }
-            .firstOrNull { canSummon(isPlayer = false, it.card).first }
+            .maxByOrNull { it.card.atk }
 
         val emptyMonsterSlot = opponent.firstEmptyMonsterSlot()
         if (summonableMonster != null && emptyMonsterSlot != -1) {
@@ -755,6 +759,7 @@ class DuelEngine {
                 } else false
             }
             is AiTurnStep.SummonMonster -> {
+                currentPhase = DuelPhase.MAIN_PHASE_1
                 val idx = opponent.hand.indexOfFirst { it.card.id == step.card.id || it.card.name == step.card.name }
                 if (idx != -1) {
                     val targetSlot = if (opponent.monsterZones[step.slotIndex] == null) step.slotIndex else opponent.firstEmptyMonsterSlot()
@@ -773,7 +778,10 @@ class DuelEngine {
                 turnNumber++
                 log("--- Turn $turnNumber: ${player.name}'s Turn ---")
                 currentPhase = DuelPhase.DRAW_PHASE
-                drawCard(isPlayer = true)
+                // Dark Duel Stories authentic 5-card hand refill at start of player's turn
+                while (player.hand.size < 5 && player.deck.isNotEmpty()) {
+                    drawCard(isPlayer = true)
+                }
                 currentPhase = DuelPhase.MAIN_PHASE_1
                 true
             }
