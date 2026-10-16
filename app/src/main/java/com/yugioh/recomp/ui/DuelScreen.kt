@@ -100,8 +100,19 @@ fun DuelScreen(
     var animatingSummonSlot by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var cardDestructionSlot by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var activeAttackRay by remember { mutableStateOf<AttackRayState?>(null) }
+    var lungingMonsterSlot by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var screenShakeOffsetX by remember { mutableStateOf(0f) }
     var screenShakeOffsetY by remember { mutableStateOf(0f) }
+
+    // Preload full-resolution authentic artwork for all cards in the duel on launch
+    LaunchedEffect(engine) {
+        val cardsToPreload = mutableListOf<Card>()
+        cardsToPreload.addAll(engine.player.deck)
+        cardsToPreload.addAll(engine.player.hand.map { it.card })
+        cardsToPreload.addAll(engine.opponent.deck)
+        cardsToPreload.addAll(engine.opponent.hand.map { it.card })
+        com.yugioh.recomp.core.rom.CardArtworkLoader.preloadCards(cardsToPreload)
+    }
 
     fun triggerScreenShake(intensity: Float = 12f) {
         coroutineScope.launch {
@@ -220,6 +231,7 @@ fun DuelScreen(
                         aiStepType = "ATTACK"
                         aiFeaturedCard = step.attackerCard
                         aiAnnouncementText = step.announcement
+                        lungingMonsterSlot = Pair(false, step.attackerSlot)
                         activeAttackRay = AttackRayState(
                             fromPlayer = false,
                             fromSlot = step.attackerSlot,
@@ -227,7 +239,7 @@ fun DuelScreen(
                             isDirect = step.isDirect
                         )
                         playSfx(if (step.isDirect) "direct" else "attack")
-                        delay(400)
+                        delay(250)
                         triggerScreenShake(if (step.isDirect) 16f else 12f)
                         val defenderSlot = step.defenderSlot
                         val prevDefender = defenderSlot?.let { engine.player.monsterZones[it] }
@@ -248,7 +260,9 @@ fun DuelScreen(
                         if (step.predictedDamage > 0) {
                             playerFloatingDamage = step.predictedDamage
                         }
-                        delay(900)
+                        delay(350)
+                        lungingMonsterSlot = null
+                        delay(500)
                         cardDestructionSlot = null
                         activeAttackRay = null
                         playerFloatingDamage = null
@@ -322,6 +336,7 @@ fun DuelScreen(
                 canDirectAttack = canDirectAttack,
                 animatingSummonSlot = animatingSummonSlot,
                 cardDestructionSlot = cardDestructionSlot,
+                lungingSlot = lungingMonsterSlot,
                 floatingDamage = opponentFloatingDamage,
                 isShaderEnabled = isShaderEnabled,
                 onDamageTick = { playSfx("damage") },
@@ -332,6 +347,7 @@ fun DuelScreen(
                 onOpponentMonsterClick = { slotIdx ->
                     if (!isAiExecuting && engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && selectedPlayerMonsterSlot != null) {
                         val playerSlot = selectedPlayerMonsterSlot!!
+                        lungingMonsterSlot = Pair(true, playerSlot)
                         activeAttackRay = AttackRayState(
                             fromPlayer = true,
                             fromSlot = playerSlot,
@@ -345,7 +361,7 @@ fun DuelScreen(
                         selectedPlayerMonsterSlot = null
 
                         coroutineScope.launch {
-                            delay(350)
+                            delay(250)
                             triggerScreenShake(14f)
                             engine.declareAttack(playerSlot, slotIdx)
                             refresh()
@@ -364,7 +380,9 @@ fun DuelScreen(
                                 opponentFloatingDamage = dmg
                             }
 
-                            delay(700)
+                            delay(350)
+                            lungingMonsterSlot = null
+                            delay(350)
                             cardDestructionSlot = null
                             activeAttackRay = null
                             autoTargetNextAttacker()
@@ -377,6 +395,7 @@ fun DuelScreen(
                     if (canDirectAttack && selectedPlayerMonsterSlot != null) {
                         val playerSlot = selectedPlayerMonsterSlot!!
                         val dmg = engine.player.monsterZones[playerSlot]?.card?.atk ?: 0
+                        lungingMonsterSlot = Pair(true, playerSlot)
                         playSfx("direct")
                         activeAttackRay = AttackRayState(
                             fromPlayer = true,
@@ -386,14 +405,16 @@ fun DuelScreen(
                         )
                         selectedPlayerMonsterSlot = null
                         coroutineScope.launch {
-                            delay(400)
+                            delay(300)
                             triggerScreenShake(18f)
                             engine.declareAttack(playerSlot, null)
                             if (dmg > 0) {
                                 opponentFloatingDamage = dmg
                             }
                             refresh()
-                            delay(750)
+                            delay(350)
+                            lungingMonsterSlot = null
+                            delay(400)
                             activeAttackRay = null
                             autoTargetNextAttacker()
                             delay(600)
@@ -475,6 +496,7 @@ fun DuelScreen(
                 isPlayerTurn = engine.isPlayerTurn,
                 animatingSummonSlot = animatingSummonSlot,
                 cardDestructionSlot = cardDestructionSlot,
+                lungingSlot = lungingMonsterSlot,
                 floatingDamage = playerFloatingDamage,
                 onDamageTick = { playSfx("damage") },
                 onMonsterZoneClick = { slotIdx ->
@@ -694,6 +716,7 @@ private fun OpponentSection(
     canDirectAttack: Boolean,
     animatingSummonSlot: Pair<Boolean, Int>?,
     cardDestructionSlot: Pair<Boolean, Int>?,
+    lungingSlot: Pair<Boolean, Int>? = null,
     floatingDamage: Int?,
     isShaderEnabled: Boolean,
     onDamageTick: () -> Unit,
@@ -897,11 +920,16 @@ private fun OpponentSection(
                         !cardDestructionSlot.first &&
                         cardDestructionSlot.second == slot
 
+                    val isOpponentLunging = lungingSlot != null &&
+                        !lungingSlot.first &&
+                        lungingSlot.second == slot
+
                     ZoneSlot(
                         duelCard = mCard,
                         isSpellTrap = false,
                         isOpponent = true,
                         highlighted = isTargetable,
+                        isLunging = isOpponentLunging,
                         isSummonAnimating = isSummonAnim,
                         isDestructionAnimating = isDestructionAnim,
                         onClick = {
@@ -1145,6 +1173,7 @@ private fun PlayerSection(
     isPlayerTurn: Boolean,
     animatingSummonSlot: Pair<Boolean, Int>?,
     cardDestructionSlot: Pair<Boolean, Int>?,
+    lungingSlot: Pair<Boolean, Int>? = null,
     floatingDamage: Int?,
     onDamageTick: () -> Unit,
     onMonsterZoneClick: (Int) -> Unit,
@@ -1177,12 +1206,17 @@ private fun PlayerSection(
                         cardDestructionSlot.first &&
                         cardDestructionSlot.second == slot
 
+                    val isPlayerLunging = lungingSlot != null &&
+                        lungingSlot.first &&
+                        lungingSlot.second == slot
+
                     ZoneSlot(
                         duelCard = mCard,
                         isSpellTrap = false,
                         isOpponent = false,
                         highlighted = isAttackerSelected || isEligibleSummonSlot,
                         isAttackingSource = isAttackerSelected,
+                        isLunging = isPlayerLunging,
                         isSummonAnimating = isSummonAnim,
                         isDestructionAnimating = isDestructionAnim,
                         onClick = { onMonsterZoneClick(slot) },
@@ -1681,13 +1715,14 @@ private fun ZoneSlot(
     isOpponent: Boolean,
     highlighted: Boolean,
     isAttackingSource: Boolean = false,
+    isLunging: Boolean = false,
     isSummonAnimating: Boolean = false,
     isDestructionAnimating: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
     val borderColor = when {
-        isAttackingSource -> AttackRed
+        isLunging || isAttackingSource -> AttackRed
         highlighted -> MillenniumGold
         duelCard != null -> Color(0xFF475569)
         isSpellTrap -> Color(0xFF1E3A8A)
@@ -1700,17 +1735,58 @@ private fun ZoneSlot(
         else -> Color(0xFF0F1A15)
     }
 
-    val scale = if (isSummonAnimating) 1.15f else 1.0f
+    // Physical Card Lunge Animation towards the opponent/player
+    val lungeTargetY = if (isLunging) (if (isOpponent) 32f else -32f) else 0f
+    val lungeOffsetY by animateFloatAsState(
+        targetValue = lungeTargetY,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
+        label = "lungeY"
+    )
+    val lungeScale by animateFloatAsState(
+        targetValue = if (isLunging) 1.15f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
+        label = "lungeScale"
+    )
+
+    // Smooth Summon Bounce
+    val animatedSummonScale by animateFloatAsState(
+        targetValue = if (isSummonAnimating) 1.22f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow),
+        label = "summonScale"
+    )
+
+    // Card Destruction Spin & Dissolve
+    val destructionScale by animateFloatAsState(
+        targetValue = if (isDestructionAnimating) 0.3f else 1.0f,
+        animationSpec = tween(500, easing = FastOutLinearInEasing),
+        label = "destrScale"
+    )
+    val destructionAlpha by animateFloatAsState(
+        targetValue = if (isDestructionAnimating) 0.0f else 1.0f,
+        animationSpec = tween(500),
+        label = "destrAlpha"
+    )
+    val destructionRotation by animateFloatAsState(
+        targetValue = if (isDestructionAnimating) 35f else 0f,
+        animationSpec = tween(500),
+        label = "destrRot"
+    )
 
     Box(
         modifier = Modifier
             .width(62.dp)
             .height(58.dp)
-            .graphicsLayer(scaleX = scale, scaleY = scale)
+            .graphicsLayer {
+                translationY = lungeOffsetY * density
+                scaleX = animatedSummonScale * lungeScale * destructionScale
+                scaleY = animatedSummonScale * lungeScale * destructionScale
+                rotationZ = destructionRotation
+                alpha = destructionAlpha
+            }
             .clip(RoundedCornerShape(4.dp))
             .background(backgroundColor)
             .border(
-                width = if (highlighted || isAttackingSource) 2.dp else 1.dp,
+                width = if (highlighted || isAttackingSource || isLunging) 2.dp else 1.dp,
                 color = borderColor,
                 shape = RoundedCornerShape(4.dp)
             )
@@ -1731,7 +1807,7 @@ private fun ZoneSlot(
                     Image(
                         bitmap = cardBackBitmap,
                         contentDescription = "Facedown Card",
-                        filterQuality = FilterQuality.None,
+                        filterQuality = FilterQuality.Medium,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
@@ -1764,7 +1840,7 @@ private fun ZoneSlot(
                     Image(
                         bitmap = cardBitmap,
                         contentDescription = card.name,
-                        filterQuality = FilterQuality.None,
+                        filterQuality = FilterQuality.Medium,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
@@ -1809,7 +1885,7 @@ private fun ZoneSlot(
                     Image(
                         bitmap = cardBitmap,
                         contentDescription = card.name,
-                        filterQuality = FilterQuality.None,
+                        filterQuality = FilterQuality.Medium,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(3.dp))
@@ -1954,16 +2030,40 @@ private fun HandCardItem(
 ) {
     val fullCardBitmap = com.yugioh.recomp.core.rom.rememberCardDisplayBitmap(card, isFullCard = true)
 
+    val animatedOffsetY by animateDpAsState(
+        targetValue = if (isSelected) (-16).dp else 0.dp,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium),
+        label = "handOffsetY"
+    )
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.08f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium),
+        label = "handScale"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "HandGlow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "borderGlow"
+    )
+
     Surface(
         color = Color(0xFF141724),
         shape = RoundedCornerShape(6.dp),
+        shadowElevation = if (isSelected) 8.dp else 2.dp,
         modifier = Modifier
             .width(68.dp)
             .fillMaxHeight()
-            .offset(y = if (isSelected) (-8).dp else 0.dp)
+            .offset(y = animatedOffsetY)
+            .graphicsLayer(scaleX = animatedScale, scaleY = animatedScale)
             .border(
                 width = if (isSelected) 2.5.dp else 1.dp,
-                color = if (isSelected) MillenniumGold else Color(0xFF2B3245),
+                color = if (isSelected) MillenniumGold.copy(alpha = glowAlpha) else Color(0xFF2B3245),
                 shape = RoundedCornerShape(6.dp)
             )
             .clickable { onClick() }
@@ -1975,7 +2075,7 @@ private fun HandCardItem(
             Image(
                 bitmap = fullCardBitmap,
                 contentDescription = card.name,
-                filterQuality = FilterQuality.None,
+                filterQuality = FilterQuality.Medium,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(2.dp)
