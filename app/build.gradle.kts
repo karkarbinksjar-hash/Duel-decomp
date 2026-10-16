@@ -11,8 +11,8 @@ android {
         applicationId = "com.yugioh.recomp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.4.1"
+        versionCode = 17
+        versionName = "2.4.2"
         setProperty("archivesBaseName", "Duel-decomp")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -24,12 +24,18 @@ android {
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
+            val permanentKeystore = file("${System.getProperty("user.home")}/.android/duel_decomp_release.keystore")
             val fallbackKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
             if (keystorePath != null && file(keystorePath).exists()) {
                 storeFile = file(keystorePath)
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
-                keyAlias = System.getenv("KEY_ALIAS") ?: "androidreleasekey"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "DuelDecomp2026SecureReleaseKey!"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "duel_decomp_release"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "DuelDecomp2026SecureReleaseKey!"
+            } else if (permanentKeystore.exists()) {
+                storeFile = permanentKeystore
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "DuelDecomp2026SecureReleaseKey!"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "duel_decomp_release"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "DuelDecomp2026SecureReleaseKey!"
             } else if (fallbackKeystore.exists()) {
                 storeFile = fallbackKeystore
                 storePassword = "android"

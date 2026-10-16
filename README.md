@@ -95,8 +95,10 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
    - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), combat ticker, attack rays, and clash impact viewports.
    - **Bottom Section**: Player playfield, persistent selected-card HUD bar, interactive hand carousel, and action buttons.
 
-9. **CI/CD & Automated Release Pipeline**:
-   - Application ID locked to `com.yugioh.recomp` guaranteeing seamless in-place updates.
+9. **CI/CD, Permanent Developer Keystore & In-Place Updates**:
+   - **Fixed Package ID**: Application ID strictly locked to `com.yugioh.recomp`.
+   - **Permanent Developer Keystore Signing**: Every release is signed with the permanent repository release keystore (`ANDROID_KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) stored in GitHub Actions secrets and `.android/duel_decomp_release.keystore`, guaranteeing cryptographic certificate continuity so every subsequent release installs seamlessly as an in-place update without package conflict errors.
+   - **Automated GitHub Release Pipeline**: Automated tag trigger (`v*.*.*`) compiling, running unit tests, assembling, signing, verifying with `apksigner`, and publishing signed APK assets.
    - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building, signing, and publishing official APK releases.
 
 ---
