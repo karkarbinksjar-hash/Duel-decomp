@@ -532,129 +532,318 @@ object GbaCampaignManager {
     }
 
     /**
-     * Constructs the authentic opponent deck according to the duelist's canonical theme.
+     * Constructs the authentic opponent deck according to the duelist's canonical theme in The Eternal Duelist Soul.
+     * Tier 1 duelists use beginner rookie decks with normal monsters (600-1400 ATK, at most 1 key card)
+     * so that starter decks can battle and progress fairly with real tactical card interactions.
      */
     fun buildOpponentDeck(opponentName: String): List<Card> {
         val deck = mutableListOf<Card>()
 
         when (opponentName) {
+            "Tristan Taylor" -> {
+                // Authentic EDS Rookie "Cookie Deck": weak normal monsters, defensive walls, and at most 1 Battle Ox
+                deck.addAll(listOf(
+                    GbaCardCatalog.AQUA_MADOOR, GbaCardCatalog.AQUA_MADOOR,
+                    GbaCardCatalog.CYBER_FALCON, GbaCardCatalog.CYBER_FALCON, GbaCardCatalog.CYBER_FALCON,
+                    GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP,
+                    GbaCardCatalog.HITOTSU_ME_GIANT, GbaCardCatalog.HITOTSU_ME_GIANT, GbaCardCatalog.HITOTSU_ME_GIANT,
+                    GbaCardCatalog.BIG_EYE, GbaCardCatalog.BIG_EYE, GbaCardCatalog.BIG_EYE,
+                    GbaCardCatalog.BEAN_SOLDIER, GbaCardCatalog.BEAN_SOLDIER, GbaCardCatalog.BEAN_SOLDIER,
+                    GbaCardCatalog.MINOMUSHI_WARRIOR, GbaCardCatalog.MINOMUSHI_WARRIOR, GbaCardCatalog.MINOMUSHI_WARRIOR,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL,
+                    GbaCardCatalog.GRIFFORE, GbaCardCatalog.GRIFFORE, GbaCardCatalog.GRIFFORE,
+                    GbaCardCatalog.DARK_GRAY, GbaCardCatalog.DARK_GRAY, GbaCardCatalog.DARK_GRAY,
+                    GbaCardCatalog.TOMOZAURUS, GbaCardCatalog.TOMOZAURUS,
+                    GbaCardCatalog.PETIT_DRAGON, GbaCardCatalog.PETIT_DRAGON,
+                    GbaCardCatalog.BATTLE_OX_GBA, // Key card (1 copy max)
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA
+                ))
+            }
+            "Tea Gardner" -> {
+                // Authentic EDS Fairy & Friendship Deck: modest attack female/fairy monsters with LP recovery
+                deck.addAll(listOf(
+                    GbaCardCatalog.ENCHANTING_MERMAID, GbaCardCatalog.ENCHANTING_MERMAID, GbaCardCatalog.ENCHANTING_MERMAID,
+                    GbaCardCatalog.SHINING_FRIENDSHIP, GbaCardCatalog.SHINING_FRIENDSHIP, GbaCardCatalog.SHINING_FRIENDSHIP,
+                    GbaCardCatalog.PETIT_ANGEL, GbaCardCatalog.PETIT_ANGEL, GbaCardCatalog.PETIT_ANGEL,
+                    GbaCardCatalog.HAPPY_LOVER, GbaCardCatalog.HAPPY_LOVER, GbaCardCatalog.HAPPY_LOVER,
+                    GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF,
+                    GbaCardCatalog.ROGUE_DOLL, GbaCardCatalog.ROGUE_DOLL,
+                    GbaCardCatalog.LALA_LI_OON, GbaCardCatalog.LALA_LI_OON, GbaCardCatalog.LALA_LI_OON,
+                    GbaCardCatalog.WICKED_MIRROR, GbaCardCatalog.WICKED_MIRROR, GbaCardCatalog.WICKED_MIRROR,
+                    GbaCardCatalog.CANDLE_OF_FATE, GbaCardCatalog.CANDLE_OF_FATE, GbaCardCatalog.CANDLE_OF_FATE,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE
+                ))
+            }
+            "Yugi Muto" -> {
+                // Authentic EDS Beginner Yugi Deck: Classic spellcaster/warrior beatdown with signature boss monsters
+                deck.addAll(listOf(
+                    GbaCardCatalog.CELTIC_GUARDIAN_GBA, GbaCardCatalog.CELTIC_GUARDIAN_GBA, GbaCardCatalog.CELTIC_GUARDIAN_GBA,
+                    GbaCardCatalog.WINGED_DRAGON_GUARDIAN, GbaCardCatalog.WINGED_DRAGON_GUARDIAN, GbaCardCatalog.WINGED_DRAGON_GUARDIAN,
+                    GbaCardCatalog.BEAVER_WARRIOR, GbaCardCatalog.BEAVER_WARRIOR, GbaCardCatalog.BEAVER_WARRIOR,
+                    GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP,
+                    GbaCardCatalog.HITOTSU_ME_GIANT, GbaCardCatalog.HITOTSU_ME_GIANT, GbaCardCatalog.HITOTSU_ME_GIANT,
+                    GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.CURSE_OF_DRAGON_GBA, GbaCardCatalog.CURSE_OF_DRAGON_GBA, // Tribute Level 5
+                    GbaCardCatalog.SUMMONED_SKULL_GBA, // Tribute Level 6
+                    DdsCardCatalog.DARK_MAGICIAN, // 2-Tribute Level 7
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.MONSTER_REBORN,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER
+                ))
+            }
             "Joey Wheeler" -> {
-                deck.add(DdsCardCatalog.RED_EYES_B_DRAGON)
-                deck.add(GbaCardCatalog.ALLIGATORS_SWORD)
-                deck.add(GbaCardCatalog.GEARFRIED_IRON_KNIGHT)
-                deck.add(GbaCardCatalog.AXE_RAIDER)
-                deck.add(GbaCardCatalog.BATTLE_OX_GBA)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.MONSTER_REBORN)
-                deck.add(GbaCardCatalog.MIRROR_FORCE)
-                deck.add(GbaCardCatalog.TRAP_HOLE)
+                // Authentic EDS Joey Underdog Deck: Beast-warriors, Red-Eyes, and gamble cards
+                deck.addAll(listOf(
+                    GbaCardCatalog.ALLIGATORS_SWORD, GbaCardCatalog.ALLIGATORS_SWORD, GbaCardCatalog.ALLIGATORS_SWORD,
+                    GbaCardCatalog.BABY_DRAGON_GBA, GbaCardCatalog.BABY_DRAGON_GBA, GbaCardCatalog.BABY_DRAGON_GBA,
+                    GbaCardCatalog.KOUMORI_DRAGON, GbaCardCatalog.KOUMORI_DRAGON, GbaCardCatalog.KOUMORI_DRAGON,
+                    GbaCardCatalog.TIME_WIZARD_GBA, GbaCardCatalog.TIME_WIZARD_GBA,
+                    GbaCardCatalog.AXE_RAIDER, GbaCardCatalog.AXE_RAIDER, GbaCardCatalog.AXE_RAIDER,
+                    GbaCardCatalog.BATTLE_OX_GBA, GbaCardCatalog.BATTLE_OX_GBA,
+                    GbaCardCatalog.ARMORED_LIZARD, GbaCardCatalog.ARMORED_LIZARD, GbaCardCatalog.ARMORED_LIZARD,
+                    GbaCardCatalog.GOKIBORE, GbaCardCatalog.GOKIBORE, GbaCardCatalog.GOKIBORE,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.BATTLE_STEER, GbaCardCatalog.BATTLE_STEER, // Level 5 Tribute
+                    GbaCardCatalog.SWORD_ARM_OF_DRAGON, // Level 6 Tribute
+                    DdsCardCatalog.RED_EYES_B_DRAGON, // 2-Tribute Level 7
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.MONSTER_REBORN,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.SKULL_DICE, GbaCardCatalog.SKULL_DICE,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA
+                ))
             }
-            "Seto Kaiba" -> {
-                deck.add(DdsCardCatalog.BLUE_EYES_WHITE_DRAGON)
-                deck.add(DdsCardCatalog.BLUE_EYES_WHITE_DRAGON)
-                deck.add(DdsCardCatalog.BLUE_EYES_WHITE_DRAGON)
-                deck.add(GbaCardCatalog.VORSE_RAIDER)
-                deck.add(GbaCardCatalog.VORSE_RAIDER)
-                deck.add(GbaCardCatalog.VORSE_RAIDER)
-                deck.add(GbaCardCatalog.LA_JINN)
-                deck.add(GbaCardCatalog.LA_JINN)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.RAIGEKI)
-                deck.add(GbaCardCatalog.MONSTER_REBORN)
-                deck.add(GbaCardCatalog.MIRROR_FORCE)
-                deck.add(GbaCardCatalog.TORRENTIAL_TRIBUTE)
-            }
-            "Yami Yugi" -> {
-                deck.add(DdsCardCatalog.DARK_MAGICIAN)
-                deck.add(GbaCardCatalog.DARK_MAGICIAN_GIRL)
-                deck.add(GbaCardCatalog.BUSTER_BLADER)
-                deck.add(GbaCardCatalog.SUMMONED_SKULL_GBA)
-                deck.add(GbaCardCatalog.CELTIC_GUARDIAN_GBA)
-                deck.add(GbaCardCatalog.MYSTICAL_ELF)
-                deck.add(GbaCardCatalog.GIANT_SOLDIER_OF_STONE)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.MONSTER_REBORN)
-                deck.add(GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT)
-                deck.add(GbaCardCatalog.MAGIC_CYLINDER)
-                deck.add(GbaCardCatalog.MIRROR_FORCE)
-            }
-            "Espa Roba" -> {
-                deck.add(GbaCardCatalog.JINZO)
-                deck.add(GbaCardCatalog.JINZO)
-                deck.add(GbaCardCatalog.GEMINI_ELF)
-                deck.add(GbaCardCatalog.VORSE_RAIDER)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.RAIGEKI)
-                deck.add(GbaCardCatalog.MONSTER_REBORN)
-            }
-            "Mai Valentine" -> {
-                deck.add(GbaCardCatalog.CYBER_HARPIE)
-                deck.add(GbaCardCatalog.CYBER_HARPIE)
-                deck.add(GbaCardCatalog.HARPIE_LADY_GBA)
-                deck.add(GbaCardCatalog.HARPIE_LADY_GBA)
-                deck.add(GbaCardCatalog.HARPIES_FEATHER_DUSTER)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.MONSTER_REBORN)
-                deck.add(GbaCardCatalog.MIRROR_FORCE)
+            "Bakura Ryou" -> {
+                // Authentic EDS Zombie / Occult Deck: Flip-effect traps, undead hordes, and disruption
+                deck.addAll(listOf(
+                    DdsCardCatalog.MORPHING_JAR, DdsCardCatalog.MORPHING_JAR, DdsCardCatalog.MORPHING_JAR,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.NEEDLE_WORM, GbaCardCatalog.NEEDLE_WORM, GbaCardCatalog.NEEDLE_WORM,
+                    GbaCardCatalog.WHITE_ZOMBIE, GbaCardCatalog.WHITE_ZOMBIE, GbaCardCatalog.WHITE_ZOMBIE,
+                    GbaCardCatalog.ARMORED_ZOMBIE, GbaCardCatalog.ARMORED_ZOMBIE, GbaCardCatalog.ARMORED_ZOMBIE,
+                    GbaCardCatalog.DRAGON_ZOMBIE, GbaCardCatalog.DRAGON_ZOMBIE, GbaCardCatalog.DRAGON_ZOMBIE,
+                    GbaCardCatalog.THE_WANDERING_DOOMED, GbaCardCatalog.THE_WANDERING_DOOMED, GbaCardCatalog.THE_WANDERING_DOOMED,
+                    GbaCardCatalog.SKULL_STALKER, GbaCardCatalog.SKULL_STALKER, GbaCardCatalog.SKULL_STALKER,
+                    GbaCardCatalog.FIENDS_HAND, GbaCardCatalog.FIENDS_HAND, GbaCardCatalog.FIENDS_HAND,
+                    GbaCardCatalog.DARKWORLD_THORNS, GbaCardCatalog.DARKWORLD_THORNS, GbaCardCatalog.DARKWORLD_THORNS,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.DARK_HOLE,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA
+                ))
             }
             "Rex Raptor" -> {
-                deck.add(GbaCardCatalog.TWO_HEADED_KING_REX)
-                deck.add(GbaCardCatalog.TWO_HEADED_KING_REX)
-                deck.add(GbaCardCatalog.URABY)
-                deck.add(GbaCardCatalog.URABY)
-                deck.add(GbaCardCatalog.CRAWLING_DRAGON_2)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.RAIGEKI)
+                deck.addAll(listOf(
+                    GbaCardCatalog.TWO_HEADED_KING_REX, GbaCardCatalog.TWO_HEADED_KING_REX, GbaCardCatalog.TWO_HEADED_KING_REX,
+                    GbaCardCatalog.URABY, GbaCardCatalog.URABY, GbaCardCatalog.URABY,
+                    GbaCardCatalog.CRAWLING_DRAGON_2, GbaCardCatalog.CRAWLING_DRAGON_2, GbaCardCatalog.CRAWLING_DRAGON_2,
+                    GbaCardCatalog.ANTHROSAURUS, GbaCardCatalog.ANTHROSAURUS, GbaCardCatalog.ANTHROSAURUS,
+                    GbaCardCatalog.TOMOZAURUS, GbaCardCatalog.TOMOZAURUS, GbaCardCatalog.TOMOZAURUS,
+                    GbaCardCatalog.ARMORED_LIZARD, GbaCardCatalog.ARMORED_LIZARD, GbaCardCatalog.ARMORED_LIZARD,
+                    GbaCardCatalog.CRAWLING_DRAGON, GbaCardCatalog.CRAWLING_DRAGON,
+                    GbaCardCatalog.SWORD_ARM_OF_DRAGON, GbaCardCatalog.SWORD_ARM_OF_DRAGON,
+                    GbaCardCatalog.POT_OF_GREED, GbaCardCatalog.RAIGEKI, GbaCardCatalog.DARK_HOLE,
+                    GbaCardCatalog.MONSTER_REBORN, GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT
+                ))
             }
             "Weevil Underwood" -> {
-                deck.add(GbaCardCatalog.BIG_INSECT)
-                deck.add(GbaCardCatalog.KILLER_NEEDLE)
-                deck.add(GbaCardCatalog.GOKIBORE)
-                deck.add(GbaCardCatalog.NEEDLE_WORM)
-                deck.add(GbaCardCatalog.MAN_EATER_BUG)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
+                deck.addAll(listOf(
+                    GbaCardCatalog.BIG_INSECT, GbaCardCatalog.BIG_INSECT, GbaCardCatalog.BIG_INSECT,
+                    GbaCardCatalog.KILLER_NEEDLE, GbaCardCatalog.KILLER_NEEDLE, GbaCardCatalog.KILLER_NEEDLE,
+                    GbaCardCatalog.GOKIBORE, GbaCardCatalog.GOKIBORE, GbaCardCatalog.GOKIBORE,
+                    GbaCardCatalog.NEEDLE_WORM, GbaCardCatalog.NEEDLE_WORM, GbaCardCatalog.NEEDLE_WORM,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.GANIGUMO, GbaCardCatalog.GANIGUMO, GbaCardCatalog.GANIGUMO,
+                    GbaCardCatalog.WINGED_CLEAVER, GbaCardCatalog.WINGED_CLEAVER, GbaCardCatalog.WINGED_CLEAVER,
+                    GbaCardCatalog.DARKWORLD_THORNS, GbaCardCatalog.DARKWORLD_THORNS, GbaCardCatalog.DARKWORLD_THORNS,
+                    GbaCardCatalog.POT_OF_GREED, GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.MONSTER_REBORN, GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN
+                ))
             }
             "Mako Tsunami" -> {
-                deck.add(GbaCardCatalog.SEVEN_COLORED_FISH)
-                deck.add(GbaCardCatalog.GREAT_WHITE)
-                deck.add(GbaCardCatalog.FIEND_KRAKEN)
-                deck.add(GbaCardCatalog.TAKRIMINOS)
-                deck.add(GbaCardCatalog.ENCHANTING_MERMAID)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.MONSTER_REBORN)
+                deck.addAll(listOf(
+                    GbaCardCatalog.SEVEN_COLORED_FISH, GbaCardCatalog.SEVEN_COLORED_FISH, GbaCardCatalog.SEVEN_COLORED_FISH,
+                    GbaCardCatalog.GREAT_WHITE, GbaCardCatalog.GREAT_WHITE, GbaCardCatalog.GREAT_WHITE,
+                    GbaCardCatalog.TAKRIMINOS, GbaCardCatalog.TAKRIMINOS, GbaCardCatalog.TAKRIMINOS,
+                    GbaCardCatalog.FIEND_KRAKEN, GbaCardCatalog.FIEND_KRAKEN, GbaCardCatalog.FIEND_KRAKEN,
+                    GbaCardCatalog.ENCHANTING_MERMAID, GbaCardCatalog.ENCHANTING_MERMAID, GbaCardCatalog.ENCHANTING_MERMAID,
+                    GbaCardCatalog.AQUA_MADOOR, GbaCardCatalog.AQUA_MADOOR, GbaCardCatalog.AQUA_MADOOR,
+                    GbaCardCatalog.POT_OF_GREED, GbaCardCatalog.MONSTER_REBORN, GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.TORRENTIAL_TRIBUTE, GbaCardCatalog.TORRENTIAL_TRIBUTE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN
+                ))
+            }
+            "Mai Valentine" -> {
+                deck.addAll(listOf(
+                    GbaCardCatalog.CYBER_HARPIE, GbaCardCatalog.CYBER_HARPIE, GbaCardCatalog.CYBER_HARPIE,
+                    GbaCardCatalog.HARPIE_LADY_GBA, GbaCardCatalog.HARPIE_LADY_GBA, GbaCardCatalog.HARPIE_LADY_GBA,
+                    DdsCardCatalog.SONIC_MAID, DdsCardCatalog.SONIC_MAID, DdsCardCatalog.SONIC_MAID,
+                    GbaCardCatalog.SHINING_FRIENDSHIP, GbaCardCatalog.SHINING_FRIENDSHIP, GbaCardCatalog.SHINING_FRIENDSHIP,
+                    GbaCardCatalog.ENCHANTING_MERMAID, GbaCardCatalog.ENCHANTING_MERMAID, GbaCardCatalog.ENCHANTING_MERMAID,
+                    GbaCardCatalog.HARPIES_FEATHER_DUSTER,
+                    GbaCardCatalog.POT_OF_GREED, GbaCardCatalog.MONSTER_REBORN, GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.MIRROR_FORCE,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL
+                ))
+            }
+            "Espa Roba" -> {
+                deck.addAll(listOf(
+                    GbaCardCatalog.JINZO, GbaCardCatalog.JINZO,
+                    GbaCardCatalog.CYBER_FALCON, GbaCardCatalog.CYBER_FALCON, GbaCardCatalog.CYBER_FALCON,
+                    GbaCardCatalog.GEARFRIED_IRON_KNIGHT, GbaCardCatalog.GEARFRIED_IRON_KNIGHT,
+                    GbaCardCatalog.BEAN_SOLDIER, GbaCardCatalog.BEAN_SOLDIER, GbaCardCatalog.BEAN_SOLDIER,
+                    GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP,
+                    GbaCardCatalog.BIG_EYE, GbaCardCatalog.BIG_EYE, GbaCardCatalog.BIG_EYE,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL,
+                    GbaCardCatalog.POT_OF_GREED, GbaCardCatalog.RAIGEKI, GbaCardCatalog.MONSTER_REBORN,
+                    GbaCardCatalog.CHANGE_OF_HEART, GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER
+                ))
+            }
+            "Seto Kaiba" -> {
+                // Tier 4 Boss: True Kaiba powerhouse beatdown with 3x Blue-Eyes, Vorse Raiders, and La Jinn
+                deck.addAll(listOf(
+                    DdsCardCatalog.BLUE_EYES_WHITE_DRAGON, DdsCardCatalog.BLUE_EYES_WHITE_DRAGON, DdsCardCatalog.BLUE_EYES_WHITE_DRAGON,
+                    GbaCardCatalog.VORSE_RAIDER, GbaCardCatalog.VORSE_RAIDER, GbaCardCatalog.VORSE_RAIDER,
+                    GbaCardCatalog.LA_JINN, GbaCardCatalog.LA_JINN, GbaCardCatalog.LA_JINN,
+                    GbaCardCatalog.BATTLE_OX_GBA, GbaCardCatalog.BATTLE_OX_GBA, GbaCardCatalog.BATTLE_OX_GBA,
+                    GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF,
+                    GbaCardCatalog.GIANT_SOLDIER_OF_STONE, GbaCardCatalog.GIANT_SOLDIER_OF_STONE,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.RAIGEKI,
+                    GbaCardCatalog.MONSTER_REBORN,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.MIRROR_FORCE,
+                    GbaCardCatalog.TORRENTIAL_TRIBUTE,
+                    GbaCardCatalog.RING_OF_DESTRUCTION,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL
+                ))
+            }
+            "Yami Yugi" -> {
+                // Tier 4 Champion: Master of Magicians & Spellcasters
+                deck.addAll(listOf(
+                    DdsCardCatalog.DARK_MAGICIAN, DdsCardCatalog.DARK_MAGICIAN,
+                    GbaCardCatalog.DARK_MAGICIAN_GIRL,
+                    GbaCardCatalog.BUSTER_BLADER,
+                    GbaCardCatalog.SUMMONED_SKULL_GBA, GbaCardCatalog.SUMMONED_SKULL_GBA,
+                    GbaCardCatalog.CELTIC_GUARDIAN_GBA, GbaCardCatalog.CELTIC_GUARDIAN_GBA,
+                    GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF,
+                    GbaCardCatalog.GIANT_SOLDIER_OF_STONE, GbaCardCatalog.GIANT_SOLDIER_OF_STONE,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.MONSTER_REBORN,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.MAGIC_CYLINDER,
+                    GbaCardCatalog.MIRROR_FORCE,
+                    GbaCardCatalog.TORRENTIAL_TRIBUTE,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL,
+                    GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP,
+                    GbaCardCatalog.CURSE_OF_DRAGON_GBA
+                ))
             }
             "Maximillion Pegasus" -> {
-                deck.add(GbaCardCatalog.RELINQUISHED)
-                deck.add(GbaCardCatalog.RELINQUISHED)
-                deck.add(GbaCardCatalog.SUMMONED_SKULL_GBA)
-                deck.add(GbaCardCatalog.GEMINI_ELF)
-                deck.add(GbaCardCatalog.VORSE_RAIDER)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.CHANGE_OF_HEART)
-                deck.add(GbaCardCatalog.SNATCH_STEAL)
-                deck.add(GbaCardCatalog.MIRROR_FORCE)
+                deck.addAll(listOf(
+                    GbaCardCatalog.RELINQUISHED, GbaCardCatalog.RELINQUISHED,
+                    GbaCardCatalog.SUMMONED_SKULL_GBA, GbaCardCatalog.SUMMONED_SKULL_GBA,
+                    GbaCardCatalog.GEMINI_ELF, GbaCardCatalog.GEMINI_ELF,
+                    GbaCardCatalog.ROGUE_DOLL, GbaCardCatalog.ROGUE_DOLL,
+                    GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF,
+                    GbaCardCatalog.SANGAN, GbaCardCatalog.SANGAN,
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.CHANGE_OF_HEART,
+                    GbaCardCatalog.SNATCH_STEAL,
+                    GbaCardCatalog.MIRROR_FORCE,
+                    GbaCardCatalog.MAGIC_CYLINDER,
+                    GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA,
+                    GbaCardCatalog.MAN_EATER_BUG, GbaCardCatalog.MAN_EATER_BUG,
+                    GbaCardCatalog.SKELENGEL, GbaCardCatalog.SKELENGEL,
+                    GbaCardCatalog.DIAN_KETO_GBA, GbaCardCatalog.DIAN_KETO_GBA,
+                    GbaCardCatalog.MAGIC_JAMMER, GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+                    GbaCardCatalog.GIANT_SOLDIER_OF_STONE, GbaCardCatalog.GIANT_SOLDIER_OF_STONE,
+                    GbaCardCatalog.NEO_MAGIC_SWORDSMAN, GbaCardCatalog.NEO_MAGIC_SWORDSMAN
+                ))
             }
             else -> {
-                deck.add(GbaCardCatalog.GEMINI_ELF)
-                deck.add(GbaCardCatalog.VORSE_RAIDER)
-                deck.add(GbaCardCatalog.BATTLE_OX_GBA)
-                deck.add(GbaCardCatalog.CELTIC_GUARDIAN_GBA)
-                deck.add(GbaCardCatalog.MYSTICAL_ELF)
-                deck.add(GbaCardCatalog.GIANT_SOLDIER_OF_STONE)
-                deck.add(GbaCardCatalog.POT_OF_GREED)
-                deck.add(GbaCardCatalog.TRAP_HOLE)
+                // Tier-appropriate rookie fallback: balanced normal monsters (800-1400 ATK) - NO Vorse Raider or Gemini Elf
+                deck.addAll(listOf(
+                    GbaCardCatalog.CELTIC_GUARDIAN_GBA, GbaCardCatalog.CELTIC_GUARDIAN_GBA,
+                    GbaCardCatalog.FERAL_IMP, GbaCardCatalog.FERAL_IMP,
+                    GbaCardCatalog.HITOTSU_ME_GIANT, GbaCardCatalog.HITOTSU_ME_GIANT,
+                    GbaCardCatalog.BEAN_SOLDIER, GbaCardCatalog.BEAN_SOLDIER,
+                    GbaCardCatalog.GRIFFORE, GbaCardCatalog.GRIFFORE,
+                    GbaCardCatalog.MYSTICAL_ELF, GbaCardCatalog.MYSTICAL_ELF,
+                    GbaCardCatalog.POT_OF_GREED,
+                    GbaCardCatalog.TRAP_HOLE, GbaCardCatalog.TRAP_HOLE,
+                    GbaCardCatalog.WABOKU_GBA, GbaCardCatalog.WABOKU_GBA
+                ))
             }
         }
 
+        // Tier-safe filler that NEVER injects tournament-level 1800-1900 ATK monsters into casual matches
         val filler = listOf(
-            GbaCardCatalog.GEMINI_ELF,
-            GbaCardCatalog.VORSE_RAIDER,
-            GbaCardCatalog.LA_JINN,
-            GbaCardCatalog.GEARFRIED_IRON_KNIGHT,
+            GbaCardCatalog.FERAL_IMP,
+            GbaCardCatalog.HITOTSU_ME_GIANT,
+            GbaCardCatalog.BEAN_SOLDIER,
+            GbaCardCatalog.GRIFFORE,
             GbaCardCatalog.MYSTICAL_ELF,
-            GbaCardCatalog.GIANT_SOLDIER_OF_STONE,
-            GbaCardCatalog.POT_OF_GREED,
-            GbaCardCatalog.TRAP_HOLE
+            GbaCardCatalog.SKELENGEL,
+            GbaCardCatalog.TRAP_HOLE,
+            GbaCardCatalog.WABOKU_GBA
         )
         var fillerIdx = 0
         while (deck.size < 40) {
@@ -666,13 +855,17 @@ object GbaCampaignManager {
     }
 
     /**
-     * Handles victory against a GBA opponent and rewards a rare card drop.
+     * Handles victory against a GBA opponent and rewards an authentic card drop.
      */
     fun recordDuelResult(opponentName: String, won: Boolean): Card? {
         if (won) {
             opponentWins[opponentName] = (opponentWins[opponentName] ?: 0) + 1
             val drop = when (opponentName) {
+                "Tristan Taylor" -> GbaCardCatalog.BATTLE_OX_GBA
+                "Tea Gardner" -> GbaCardCatalog.SHINING_FRIENDSHIP
+                "Yugi Muto" -> GbaCardCatalog.CELTIC_GUARDIAN_GBA
                 "Joey Wheeler" -> GbaCardCatalog.ALLIGATORS_SWORD
+                "Bakura Ryou" -> DdsCardCatalog.MORPHING_JAR
                 "Seto Kaiba" -> DdsCardCatalog.BLUE_EYES_WHITE_DRAGON
                 "Yami Yugi" -> GbaCardCatalog.BUSTER_BLADER
                 "Espa Roba" -> GbaCardCatalog.JINZO
@@ -681,7 +874,7 @@ object GbaCampaignManager {
                 "Weevil Underwood" -> GbaCardCatalog.BIG_INSECT
                 "Mako Tsunami" -> GbaCardCatalog.SEVEN_COLORED_FISH
                 "Maximillion Pegasus" -> GbaCardCatalog.RELINQUISHED
-                else -> GbaCardCatalog.GEMINI_ELF
+                else -> GbaCardCatalog.BATTLE_OX_GBA
             }
             trunk.add(drop)
             return drop
