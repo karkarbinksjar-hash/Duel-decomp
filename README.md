@@ -35,7 +35,21 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
    - **Card Destruction Dissolve**: Defeated monsters scale down, spin (`35°`), and fade into crimson particle bursts.
    - **Hand Card Elevation & Glow**: Selected hand cards smoothly raise up (`-16dp`) with drop shadow elevation and a pulsing Millennium Gold halo border.
 
-2. **Authentic *The Eternal Duelist Soul* (EDS) Starting Decks & 5-Tier Campaign Ladder**:
+3. **Damage Step Rules, Flip Mechanics & Smart AI Battle Targeting (v2.3.0)**:
+   - **Damage Step Face-Down Monster Flip**: In accordance with official Yu-Gi-Oh! (TCG/OCG, EDS, and DDS) battle rules, when a monster in `FACE_DOWN_DEFENSE` is attacked, it is immediately flipped face-up into `FACE_UP_DEFENSE` in the Damage Step before damage calculation.
+   - **Surviving Defense Walls**: If the defender's DEF exceeds or equals the attacker's ATK, the monster survives and **remains face-up on the field** in `FACE_UP_DEFENSE`, displaying its full artwork, card name, and DEF stat. Attacking players or AI take reflective battle damage.
+   - **Flip Effect Engine**: Monsters flipped face-up in battle or via Flip Summon trigger authentic Flip Effects:
+     - **Man-Eater Bug**: Automatically destroys the attacking monster (or an opponent monster on Flip Summon).
+     - **Needle Worm**: Forces the opponent to discard the top 5 cards of their deck to the graveyard.
+     - **Morphing Jar**: Forces both players to discard their hands and draw 5 cards.
+   - **Intelligent Enemy AI Target Evaluation**:
+     - The AI dynamically evaluates all potential targets with weighted heuristics: prioritizing known vulnerable attack monsters (`10000 + diff`) and known defense monsters with lower DEF (`5000 + diff`).
+     - AI **never** attacks a known face-up defense monster whose DEF is greater than or equal to its attacker's ATK, eliminating self-inflicted suicide bounce damage.
+     - Probing attacks on unknown face-down monsters require high ATK ($\ge 1400$) and sufficient LP ($> 1200$).
+     - During multi-monster AI battle phase simulations, surviving defense monsters are immediately updated to `FACE_UP_DEFENSE` on the virtual board so subsequent AI monsters on the same turn never attack the revealed wall.
+   - **Opponent Face-Down Privacy**: Face-down opponent cards cannot be inspected until legitimately revealed or flipped face-up in combat.
+
+4. **Authentic *The Eternal Duelist Soul* (EDS) Starting Decks & 5-Tier Campaign Ladder**:
    - **Choice of 3 Canonical Starting Decks**:
      - **Black Deck** (Default): Earth & Dark beatdown featuring **Armored Lizard** (`15480588`), *Summoned Skull*, *Sangan*, *Bean Soldier*, *Raigeki*, *Pot of Greed*, *Change of Heart*, *Mirror Force*, and *Trap Hole*.
      - **Red Deck**: Fiery offensive deck featuring *Axe Raider*, *7 Colored Fish*, *Harpie Lady*, *Dark Hole*, *Pot of Greed*, *Snatch Steal*, and *Swords of Revealing Light*.
@@ -48,7 +62,7 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
      - **Tier 5**: Maximillion Pegasus, Simon Muran, Duel Computer, Solomon Muto (Unlocked after 5 wins each or 70 total wins).
    - **Interactive Campaign Hub**: Starting deck switcher buttons, Tier filter tabs (`All`, `T1`, `T2`, `T3`, `T4`, `T5`) with lock indicators (`🔒`), win counters, and opponent profiles.
 
-3. **Intelligent, Aggressive Combat AI Engine**:
+5. **Intelligent, Aggressive Combat AI Engine**:
    - **Simulated Turn Planning**: The AI evaluates board states after planned Normal and Tribute Summons, ensuring newly summoned monsters (e.g. *Armored Lizard*, *Jinzo*, *Vorse Raider*) actively declare attacks.
    - **Competitive Attack Targeting**:
      - Prioritizes destroying Attack position monsters with lower ATK and inflicting battle damage to the player.
@@ -59,7 +73,7 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
      - Avoids reckless suicide attacks against stronger cards.
    - **Paced Step-by-Step Sequencer**: Turn progression is visibly observable with banner announcements, phase transitions, attack laser beams, screen shake, clash viewports, and floating damage numbers.
 
-4. **Authentic Dark Duel Stories (GBC) Deck & Campaign Mechanics**:
+6. **Authentic Dark Duel Stories (GBC) Deck & Campaign Mechanics**:
    - **Canonical 40-Card Starter Deck**: Strictly composed of cards with Deck Cost $\le 15$.
    - **Deck Capacity & Duelist Level Progression**:
      - Player starts at **Duelist Level 15** and **Deck Capacity 400 DC**.
@@ -67,7 +81,7 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
      - Winning duels awards **+3 Deck Capacity** and cards won from opponent drop pools added directly to Trunk.
    - **GBC Duel Rules**: 5-card hand limit, no-tribute normal summons bounded by DC, elemental alignment dominance wheel (*Shadow* $\rightarrow$ *Light* $\rightarrow$ *Fiend* $\rightarrow$ *Dreams* $\rightarrow$ *Pyro* $\rightarrow$ *Forest* $\rightarrow$ *Wind* $\rightarrow$ *Earth* $\rightarrow$ *Thunder* $\rightarrow$ *Aqua* $\rightarrow$ *Pyro*).
 
-5. **High-Definition Visual Presentation & Modernized Neon Arena**:
+7. **High-Definition Visual Presentation & Modernized Neon Arena**:
    - **144×208 Ultra-Sharp Resolution**: Official 59:86 Yu-Gi-Oh! card ratio with realistic 3D bevels, brushed metal nameplates, and drop shadow borders.
    - **Millennium Eye Card Back**: Deep swirled mahogany/chocolate background with dual concentric gold rings and Millennium Eye emblem.
    - **3D Glassmorphic Attribute Orbs & Star Level Rows**: Glassmorphic attribute gems with specular glints and facet star borders.
@@ -75,13 +89,13 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
    - **Dynamic Duel Animation Suite**: Golden Millennium summoning portal, clash impact bursts with screen shake, shattered card destruction fragments, and animated rolling Life Points counter.
    - **CRT/LCD Dot-Matrix Shader**: High-performance optional scanline overlay with toggle in the Campaign Hub.
 
-6. **Portrait Architecture & Mobile UX**:
+8. **Portrait Architecture & Mobile UX**:
    - Locked to **Portrait Mode**.
    - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, facedown hand cards, animated Life Points, floating damage indicators, graveyard counter).
    - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), combat ticker, attack rays, and clash impact viewports.
    - **Bottom Section**: Player playfield, persistent selected-card HUD bar, interactive hand carousel, and action buttons.
 
-7. **CI/CD & Automated Release Pipeline**:
+9. **CI/CD & Automated Release Pipeline**:
    - Application ID locked to `com.yugioh.recomp` guaranteeing seamless in-place updates.
    - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building, signing, and publishing official APK releases.
 

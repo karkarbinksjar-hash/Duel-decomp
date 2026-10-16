@@ -936,13 +936,15 @@ private fun OpponentSection(
                             if (mCard != null) {
                                 onSelectOpponentSlot(slot)
                                 if (isTargetable) onOpponentMonsterClick(slot)
-                                else onInspectCard(mCard.card)
+                                else if (!mCard.position.isFaceDown) onInspectCard(mCard.card)
                             } else if (canDirectAttack) {
                                 onDirectAttack()
                             }
                         },
                         onLongClick = {
-                            mCard?.card?.let { onInspectCard(it) }
+                            if (mCard != null && !mCard.position.isFaceDown) {
+                                onInspectCard(mCard.card)
+                            }
                         }
                     )
                 }
