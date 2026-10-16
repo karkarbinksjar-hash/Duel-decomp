@@ -55,14 +55,8 @@ jobs:
             echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
             echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
           else
-            echo "No ANDROID_KEYSTORE_BASE64 found in secrets; generating deterministic fallback keystore for CI..."
-            keytool -genkey -v -keystore "$KEYSTORE_FILE" -storepass android \
-              -alias androidreleasekey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=YuGiOhRecomp,OU=Engine,O=Arena,C=US"
-            echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> $GITHUB_ENV
-            echo "KEYSTORE_PASSWORD=android" >> $GITHUB_ENV
-            echo "KEY_ALIAS=androidreleasekey" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+            echo "FATAL: ANDROID_KEYSTORE_BASE64 secret is missing! Every release must be signed with the permanent repository keystore so users can install continuous updates." >&2
+            exit 1
           fi
 
       - name: Run Unit Tests
