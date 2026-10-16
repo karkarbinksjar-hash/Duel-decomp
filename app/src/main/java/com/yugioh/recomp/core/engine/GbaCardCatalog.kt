@@ -83,7 +83,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.TRAP,
         cardType = CardType.TRAP,
         monsterType = MonsterType.NONE,
-        description = "Special Summon 1 monster from your Graveyard in face-up Attack Position."
+        description = "Special Summon 1 monster from your Graveyard in face-up Attack Position.",
+        password = "97077563"
     )
 
     val IMPERIAL_ORDER = Card(
@@ -95,7 +96,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.TRAP,
         cardType = CardType.TRAP,
         monsterType = MonsterType.NONE,
-        description = "Negate all Spell Card effects on the field."
+        description = "Negate all Spell Card effects on the field.",
+        password = "61740673"
     )
 
     val SNATCH_STEAL = Card(
@@ -172,7 +174,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.EARTH,
         cardType = CardType.MONSTER,
         monsterType = MonsterType.ROCK,
-        description = "A giant warrior made of stone. A punch from this creature has an earth-shaking impact."
+        description = "A giant warrior made of stone. A punch from this creature has an earth-shaking impact.",
+        password = "13039848"
     )
 
     val MAN_EATER_BUG = Card(
@@ -184,7 +187,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.EARTH,
         cardType = CardType.MONSTER,
         monsterType = MonsterType.INSECT,
-        description = "FLIP: Target 1 monster on the field; destroy that target."
+        description = "FLIP: Target 1 monster on the field; destroy that target.",
+        password = "54652250"
     )
 
     val MONSTER_REBORN = Card(
@@ -235,7 +239,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.SPELL,
         cardType = CardType.SPELL,
         monsterType = MonsterType.NONE,
-        description = "Draw 3 cards, then discard 2 cards from your hand."
+        description = "Draw 3 cards, then discard 2 cards from your hand.",
+        password = "79571449"
     )
 
     val HARPIES_FEATHER_DUSTER = Card(
@@ -247,7 +252,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.SPELL,
         cardType = CardType.SPELL,
         monsterType = MonsterType.NONE,
-        description = "Destroy all Spell and Trap Cards your opponent controls."
+        description = "Destroy all Spell and Trap Cards your opponent controls.",
+        password = "18144506"
     )
 
     val HEAVY_STORM = Card(
@@ -259,7 +265,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.SPELL,
         cardType = CardType.SPELL,
         monsterType = MonsterType.NONE,
-        description = "Destroy all Spell and Trap Cards on the field."
+        description = "Destroy all Spell and Trap Cards on the field.",
+        password = "19613556"
     )
 
     val MAGIC_CYLINDER = Card(
@@ -284,7 +291,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.WIND,
         cardType = CardType.MONSTER,
         monsterType = MonsterType.WINGED_BEAST,
-        description = "A Harpie Lady outfitted with cybernetic armor, boosting its aerial assault prowess."
+        description = "A Harpie Lady outfitted with cybernetic armor, boosting its aerial assault prowess.",
+        password = "80316585"
     )
 
     val BARREL_DRAGON = Card(
@@ -296,7 +304,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.DARK,
         cardType = CardType.MONSTER,
         monsterType = MonsterType.MACHINE,
-        description = "Bandit Keith's devastating mechanized dragon armed with triple rotating gun barrels."
+        description = "Bandit Keith's devastating mechanized dragon armed with triple rotating gun barrels.",
+        password = "81480460"
     )
 
     val RELINQUISHED = Card(
@@ -308,7 +317,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.DARK,
         cardType = CardType.MONSTER,
         monsterType = MonsterType.SPELLCASTER,
-        description = "Pegasus's bizarre ritual beast that absorbs opponent monsters and uses them as shields."
+        description = "Pegasus's bizarre ritual beast that absorbs opponent monsters and uses them as shields.",
+        password = "64631466"
     )
 
     val ALLIGATORS_SWORD = Card(
@@ -320,7 +330,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.EARTH,
         cardType = CardType.MONSTER,
         monsterType = MonsterType.BEAST_WARRIOR,
-        description = "Joey's sword-wielding alligator that flies through the air on its trusty dragon mount."
+        description = "Joey's sword-wielding alligator that flies through the air on its trusty dragon mount.",
+        password = "64428736"
     )
 
     val TORRENTIAL_TRIBUTE = Card(
@@ -332,7 +343,8 @@ object GbaCardCatalog {
         attribute = CardAttribute.TRAP,
         cardType = CardType.TRAP,
         monsterType = MonsterType.NONE,
-        description = "When a monster is Summoned: Destroy all monsters on the field."
+        description = "When a monster is Summoned: Destroy all monsters on the field.",
+        password = "53582587"
     )
 
     // --- Authentic The Eternal Duelist Soul (EDS) Starter Deck Cards ---
@@ -541,7 +553,7 @@ object GbaCardCatalog {
         cardType = CardType.MONSTER,
         monsterType = MonsterType.DRAGON,
         description = "A very small dragon that breathes gentle flames.",
-        password = "75356994"
+        password = "75356564"
     )
 
     val STONE_ARMADILLER = Card(

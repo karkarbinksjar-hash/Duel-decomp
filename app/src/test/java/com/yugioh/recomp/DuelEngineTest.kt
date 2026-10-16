@@ -453,6 +453,19 @@ class DuelEngineTest {
         val skull = GbaCardCatalog.SUMMONED_SKULL_GBA
         val skullPasscode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(skull)
         assertEquals("70781052", skullPasscode)
+
+        val petit = GbaCardCatalog.PETIT_DRAGON
+        val petitPasscode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(petit)
+        assertEquals("75356564", petitPasscode)
+
+        val coh = GbaCardCatalog.CALL_OF_THE_HAUNTED
+        val cohPasscode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(coh)
+        assertEquals("97077563", cohPasscode)
+
+        val battleOx = GbaCardCatalog.BATTLE_OX_GBA
+        val battleOxPasscode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(battleOx)
+        assertNotNull(battleOxPasscode)
+        assertTrue(battleOxPasscode!!.endsWith("5053103"))
     }
 
     @Test

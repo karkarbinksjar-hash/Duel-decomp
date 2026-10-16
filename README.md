@@ -22,13 +22,18 @@ The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or
 
 ## Key Features
 
-1. **Dynamic High-Resolution Card Artwork Pipeline (`CardArtworkLoader`)**:
+1. **Consistent 100% Full-Resolution Card Artwork Pipeline (`CardArtworkLoader`)**:
    - Zero copyrighted art files packaged into the binary release.
-   - At runtime, authentic Kazuki Takahashi card artwork scans (matching physical TCG card scans, including *Armored Lizard* `15480588`) are streamed dynamically on-demand using canonical 8-digit passcodes.
-   - **High-Performance Two-Tier Caching**:
-     - *In-Memory Cache*: `ConcurrentHashMap<String, ImageBitmap>` ensures buttery-smooth 60fps scrolling and instant UI rendering.
-     - *Local Disk Cache*: `context.cacheDir/card_art/` caches artwork persistently on device so cards remain available offline once fetched.
-   - Seamless fallback to high-definition 144×208 elemental crest card frames if offline prior to initial download.
+   - At runtime, authentic Kazuki Takahashi card artwork scans (matching physical TCG card scans, including *Armored Lizard* `15480588`, *Petit Dragon* `75356564`, *Call of the Haunted* `97077563`, *Big Insect*, *Battle Ox*, etc.) are streamed dynamically on-demand using canonical 8-digit passcodes.
+   - **Leading-Zero & Dual-ID Resilient Streaming**: Seamlessly resolves numeric CDN IDs stripped of leading zeros (e.g. `5053103`, `4031928`) alongside canonical Konami 8-digit codes with automatic API fallback and alias normalization.
+   - **Preloading & Two-Tier Caching**: Preloads all duel cards on launch in background coroutines with in-memory caching and persistent local disk caching (`cacheDir/card_art/`) so cards render instantly offline.
+   - **Modern Card Detail Inspection Modal**: Full high-resolution card view by default with stats scoreboard, lore box, and retro GBC mode switcher.
+
+2. **Physical Card Movement & Fluid Battle Animations**:
+   - **Attacking Monster Lunge Animation**: Monsters physically spring out of their field zones and lunge towards the opponent or target card (`translationY = ±32dp`, scaling `1.15f`), impact with electric clash rays and screen shake, and bounce smoothly back into position.
+   - **Summoning Spring Bounce**: Summoned monsters pop into their zone with spring-based scaling and glowing Millennium summon rings.
+   - **Card Destruction Dissolve**: Defeated monsters scale down, spin (`35°`), and fade into crimson particle bursts.
+   - **Hand Card Elevation & Glow**: Selected hand cards smoothly raise up (`-16dp`) with drop shadow elevation and a pulsing Millennium Gold halo border.
 
 2. **Authentic *The Eternal Duelist Soul* (EDS) Starting Decks & 5-Tier Campaign Ladder**:
    - **Choice of 3 Canonical Starting Decks**:
