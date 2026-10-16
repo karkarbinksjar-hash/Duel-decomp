@@ -1225,6 +1225,14 @@ class DuelEngine {
         }
     }
 
+    fun surrender(isPlayer: Boolean = true) {
+        if (winner != null) return
+        val concedingDuelist = if (isPlayer) player else opponent
+        concedingDuelist.lifePoints = 0
+        log("${concedingDuelist.name} surrendered the duel.")
+        checkWinConditions()
+    }
+
     private fun checkWinConditions() {
         if (player.lifePoints <= 0 && opponent.lifePoints <= 0) {
             winner = "DRAW"

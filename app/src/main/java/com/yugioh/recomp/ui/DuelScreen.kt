@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,15 @@ fun DuelScreen(
             }
             startDuel(opp)
         }
+    }
+
+    val isGba = RomAssetCache.activeTarget?.platform == RomPlatform.GBA
+    var isMenuOpen by remember { mutableStateOf(false) }
+    var isSfxEnabled by remember { mutableStateOf(true) }
+    var isFastAiEnabled by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = true) {
+        isMenuOpen = !isMenuOpen
     }
 
     val coroutineScope = rememberCoroutineScope()
@@ -133,6 +143,7 @@ fun DuelScreen(
     }
 
     fun playSfx(type: String) {
+        if (!isSfxEnabled) return
         val sfx = when (type) {
             "draw" -> ChiptuneSynthesizer.createCardDrawSfx()
             "summon" -> ChiptuneSynthesizer.createSummonSfx()
@@ -176,6 +187,7 @@ fun DuelScreen(
             engine.dismissClash()
             refresh()
 
+            val speedMul = if (isFastAiEnabled) 0.5f else 1.0f
             val steps = engine.planAiTurnSteps()
             for (step in steps) {
                 if (engine.winner != null) break
@@ -187,7 +199,7 @@ fun DuelScreen(
                         aiAnnouncementText = step.announcement
                         engine.executeAiStep(step)
                         refresh()
-                        delay(750)
+                        delay((750 * speedMul).toLong())
                     }
                     is AiTurnStep.Draw -> {
                         aiStepType = "DRAW"
@@ -196,7 +208,7 @@ fun DuelScreen(
                         playSfx("draw")
                         engine.executeAiStep(step)
                         refresh()
-                        delay(850)
+                        delay((850 * speedMul).toLong())
                     }
                     is AiTurnStep.ActivateSpell -> {
                         aiStepType = "SPELL"
@@ -205,7 +217,7 @@ fun DuelScreen(
                         playSfx("summon")
                         engine.executeAiStep(step)
                         refresh()
-                        delay(1200)
+                        delay((1200 * speedMul).toLong())
                     }
                     is AiTurnStep.SetTrap -> {
                         aiStepType = "TRAP"
@@ -214,7 +226,7 @@ fun DuelScreen(
                         playSfx("summon")
                         engine.executeAiStep(step)
                         refresh()
-                        delay(900)
+                        delay((900 * speedMul).toLong())
                     }
                     is AiTurnStep.SummonMonster -> {
                         aiStepType = "SUMMON"
@@ -224,7 +236,7 @@ fun DuelScreen(
                         animatingSummonSlot = Pair(false, step.slotIndex)
                         engine.executeAiStep(step)
                         refresh()
-                        delay(1100)
+                        delay((1100 * speedMul).toLong())
                         animatingSummonSlot = null
                     }
                     is AiTurnStep.DeclareAttack -> {
@@ -329,6 +341,14 @@ fun DuelScreen(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
+            DuelTopBar(
+                isGba = isGba,
+                opponentName = engine.opponent.name,
+                turnNumber = engine.turnNumber,
+                currentPhase = engine.currentPhase,
+                onOpenMenu = { isMenuOpen = true }
+            )
+
             OpponentSection(
                 opponent = engine.opponent,
                 selectedPlayerMonsterSlot = selectedPlayerMonsterSlot,
@@ -338,12 +358,7 @@ fun DuelScreen(
                 cardDestructionSlot = cardDestructionSlot,
                 lungingSlot = lungingMonsterSlot,
                 floatingDamage = opponentFloatingDamage,
-                isShaderEnabled = isShaderEnabled,
                 onDamageTick = { playSfx("damage") },
-                onToggleShader = {
-                    isShaderEnabled = !isShaderEnabled
-                    DdsCampaignManager.isGbcLcdShaderEnabled = isShaderEnabled
-                },
                 onOpponentMonsterClick = { slotIdx ->
                     if (!isAiExecuting && engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && selectedPlayerMonsterSlot != null) {
                         val playerSlot = selectedPlayerMonsterSlot!!
@@ -490,6 +505,7 @@ fun DuelScreen(
 
             PlayerSection(
                 player = engine.player,
+                isGba = isGba,
                 selectedCard = selectedCard,
                 selectedPlayerMonsterSlot = selectedPlayerMonsterSlot,
                 currentPhase = engine.currentPhase,
@@ -671,6 +687,60 @@ fun DuelScreen(
             GbcShaderOverlay(alpha = 0.18f)
         }
 
+        if (isMenuOpen) {
+            InGameMenuDialog(
+                opponentName = engine.opponent.name,
+                turnNumber = engine.turnNumber,
+                currentPhase = engine.currentPhase,
+                playerLp = engine.player.lifePoints,
+                opponentLp = engine.opponent.lifePoints,
+                playerDeckCount = engine.player.deck.size,
+                opponentDeckCount = engine.opponent.deck.size,
+                playerGyCount = engine.player.graveyard.size,
+                opponentGyCount = engine.opponent.graveyard.size,
+                combatLogs = engine.combatLogs,
+                isGba = isGba,
+                isSfxEnabled = isSfxEnabled,
+                onToggleSfx = { isSfxEnabled = !isSfxEnabled },
+                isShaderEnabled = isShaderEnabled,
+                onToggleShader = {
+                    isShaderEnabled = !isShaderEnabled
+                    DdsCampaignManager.isGbcLcdShaderEnabled = isShaderEnabled
+                },
+                isFastAiEnabled = isFastAiEnabled,
+                onToggleFastAi = { isFastAiEnabled = !isFastAiEnabled },
+                onResume = { isMenuOpen = false },
+                onRestart = {
+                    val oppName = if (isGba) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName
+                    engine.startDuel(oppName)
+                    selectedCardHandIndex = null
+                    selectedPlayerMonsterSlot = null
+                    selectedOpponentSlot = null
+                    selectedFieldCard = null
+                    isMenuOpen = false
+                    refresh()
+                },
+                onSurrender = {
+                    engine.surrender(isPlayer = true)
+                    isMenuOpen = false
+                    onNavigateBackToRom()
+                },
+                onOpenPlayerGy = {
+                    viewingGraveyardTitle = "${engine.player.name}'s Graveyard"
+                    viewingGraveyardCards = engine.player.graveyard.toList()
+                },
+                onOpenOpponentGy = {
+                    viewingGraveyardTitle = "${engine.opponent.name}'s Graveyard"
+                    viewingGraveyardCards = engine.opponent.graveyard.toList()
+                },
+                onExitToHub = {
+                    isMenuOpen = false
+                    onNavigateBackToRom()
+                },
+                onDismiss = { isMenuOpen = false }
+            )
+        }
+
         inspectingCard?.let { card ->
             CardDetailDialog(card = card, onDismiss = { inspectingCard = null })
         }
@@ -689,10 +759,13 @@ fun DuelScreen(
                 winnerName = winnerName,
                 opponentName = engine.opponent.name,
                 rewardCard = engine.lastRewardCard,
+                isGba = isGba,
+                opponentWins = GbaCampaignManager.opponentWins[engine.opponent.name] ?: 0,
                 deckCapacity = DdsCampaignManager.deckCapacity,
                 duelistLevel = DdsCampaignManager.duelistLevel,
                 onRestart = {
-                    engine.startDuel(DdsCampaignManager.selectedOpponentName)
+                    val oppName = if (isGba) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName
+                    engine.startDuel(oppName)
                     selectedCardHandIndex = null
                     selectedPlayerMonsterSlot = null
                     selectedOpponentSlot = null
@@ -701,6 +774,91 @@ fun DuelScreen(
                 },
                 onExit = onNavigateBackToRom
             )
+        }
+    }
+}
+
+// =========================================================================
+// TOP BATTLE CITY / DDS STATUS & IN-GAME MENU BAR
+// =========================================================================
+@Composable
+private fun DuelTopBar(
+    isGba: Boolean,
+    opponentName: String,
+    turnNumber: Int,
+    currentPhase: DuelPhase,
+    onOpenMenu: () -> Unit
+) {
+    Surface(
+        color = Color(0xFF0F1424),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 3.dp)
+            .border(1.dp, Color(0xFF26324D), RoundedCornerShape(8.dp))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .background(
+                            Brush.radialGradient(listOf(MillenniumGold, Color(0xFFB45309))),
+                            CircleShape
+                        )
+                        .border(1.dp, Color(0xFFFEF08A), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("👁", fontSize = 10.sp)
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Column {
+                    Text(
+                        text = if (isGba) "BATTLE CITY • EDS" else "DARK DUEL STORIES",
+                        color = MillenniumGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "VS $opponentName • T$turnNumber • ${currentPhase.shortName}",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 8.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // GBA Arcade In-Game Menu Button
+            Surface(
+                color = Color(0xFF1E2842),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .clickable { onOpenMenu() }
+                    .border(1.dp, MillenniumGold, RoundedCornerShape(6.dp))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("☰", color = MillenniumGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "MENU",
+                        color = Color.White,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
         }
     }
 }
@@ -718,9 +876,7 @@ private fun OpponentSection(
     cardDestructionSlot: Pair<Boolean, Int>?,
     lungingSlot: Pair<Boolean, Int>? = null,
     floatingDamage: Int?,
-    isShaderEnabled: Boolean,
     onDamageTick: () -> Unit,
-    onToggleShader: () -> Unit,
     onOpponentMonsterClick: (Int) -> Unit,
     onDirectAttack: () -> Unit,
     onInspectCard: (Card) -> Unit,
@@ -783,22 +939,6 @@ private fun OpponentSection(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = if (isShaderEnabled) Color(0xFF047857) else Color(0xFF1E293B),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier
-                            .clickable { onToggleShader() }
-                            .border(0.5.dp, Color(0xFF475569), RoundedCornerShape(4.dp))
-                    ) {
-                        Text(
-                            text = if (isShaderEnabled) "📺 GBC" else "📺 OFF",
-                            color = Color.White,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
                     Surface(
                         color = Color(0xFF1E2230),
                         shape = RoundedCornerShape(4.dp),
@@ -1017,16 +1157,20 @@ private fun MiddleAnimationStage(
                             DuelPhase.END_PHASE -> Color(0xFFA855F7)
                         }
                         Surface(
-                            color = if (isActive) phaseColor else Color(0xFF1A202E),
-                            shape = RoundedCornerShape(3.dp),
-                            modifier = if (isActive) Modifier.border(1.dp, Color.White, RoundedCornerShape(3.dp)) else Modifier
+                            color = if (isActive) phaseColor else Color(0xFF161E2E),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = if (isActive) {
+                                Modifier
+                                    .border(1.dp, Color.White, RoundedCornerShape(4.dp))
+                                    .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                            } else Modifier
                         ) {
                             Text(
                                 text = phase.shortName,
                                 color = if (isActive) Color.Black else Color(0xFF64748B),
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
                     }
@@ -1169,6 +1313,7 @@ private fun MiddleAnimationStage(
 @Composable
 private fun PlayerSection(
     player: Duelist,
+    isGba: Boolean,
     selectedCard: Card?,
     selectedPlayerMonsterSlot: Int?,
     currentPhase: DuelPhase,
@@ -1316,7 +1461,7 @@ private fun PlayerSection(
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "DC: ${DdsCampaignManager.totalDeckCost()}/${DdsCampaignManager.deckCapacity}",
+                        text = if (isGba) "🎴 Deck: ${player.deck.size}" else "DC: ${DdsCampaignManager.totalDeckCost()}/${DdsCampaignManager.deckCapacity}",
                         color = MillenniumGold,
                         fontSize = 9.5.sp,
                         fontFamily = FontFamily.Monospace,
@@ -1602,50 +1747,55 @@ private fun HandCarouselAndControls(
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (isTribute) Color(0xFFD97706) else AttackRed
                                 ),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, if (isTribute) MillenniumGold else Color(0xFFFCA5A5)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text(if (hasSummoned) "Summoned" else tributeLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(if (hasSummoned) "Summoned" else "⚔ $tributeLabel", fontSize = 11.sp, fontWeight = FontWeight.Black)
                             }
                             Button(
                                 onClick = onSetDefense,
                                 enabled = canSummonNow,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isTribute) Color(0xFF92400E) else DefenseBlue
+                                    containerColor = if (isTribute) Color(0xFF78350F) else DefenseBlue
                                 ),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF60A5FA)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text(if (isTribute) "Trib Set" else "Set DEF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(if (isTribute) "🛡 Trib Set" else "🛡 Set DEF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         } else if (card.isSpell) {
                             Button(
                                 onClick = onActivateSpell,
                                 enabled = isPlayerTurn,
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488)),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF5EEAD4)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text("Activate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("✨ Activate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                             Button(
                                 onClick = onSetSpellTrap,
                                 enabled = isPlayerTurn,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569)),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF64748B)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text("Set", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("🛡 Set", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         } else if (card.isTrap) {
                             Button(
                                 onClick = onSetSpellTrap,
                                 enabled = isPlayerTurn,
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFBE185D)),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFFF472B6)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text("Set Trap", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("🛡 Set Trap", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1682,25 +1832,51 @@ private fun HandCarouselAndControls(
             Button(
                 onClick = onAdvancePhase,
                 enabled = isPlayerTurn && currentPhase != DuelPhase.END_PHASE,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1D4ED8),
+                    disabledContainerColor = Color(0xFF1E293B)
+                ),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) Color(0xFF60A5FA) else Color(0xFF334155)),
                 modifier = Modifier
                     .weight(1f)
-                    .height(38.dp)
+                    .height(40.dp)
             ) {
-                Text("Next Phase", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("▶▶", fontSize = 11.sp, color = if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) MillenniumGold else Color(0xFF64748B))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Next Phase",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) Color.White else Color(0xFF64748B)
+                    )
+                }
             }
 
             Button(
                 onClick = onEndTurn,
                 enabled = isPlayerTurn,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFB91C1C),
+                    disabledContainerColor = Color(0xFF1E293B)
+                ),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, if (isPlayerTurn) Color(0xFFF87171) else Color(0xFF334155)),
                 modifier = Modifier
                     .weight(1f)
-                    .height(38.dp)
+                    .height(40.dp)
             ) {
-                Text("End Turn", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⌛", fontSize = 11.sp, color = if (isPlayerTurn) Color.White else Color(0xFF64748B))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "End Turn",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isPlayerTurn) Color.White else Color(0xFF64748B)
+                    )
+                }
             }
         }
     }
@@ -1924,12 +2100,23 @@ private fun ZoneSlot(
                 }
             }
         } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(2.dp)
+            ) {
                 Text(
-                    text = if (isSpellTrap) "S/T" else "M",
+                    text = if (isSpellTrap) "🛡" else "⚔",
+                    color = if (isSpellTrap) Color(0xFF38BDF8) else Color(0xFF64748B),
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = if (isSpellTrap) "SPELL/TRAP" else "MONSTER",
                     color = Color(0xFF475569),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    fontSize = 6.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.5.sp
                 )
             }
         }
@@ -2581,6 +2768,8 @@ private fun WinnerOverlay(
     winnerName: String,
     opponentName: String,
     rewardCard: Card?,
+    isGba: Boolean,
+    opponentWins: Int,
     deckCapacity: Int,
     duelistLevel: Int,
     onRestart: () -> Unit,
@@ -2589,7 +2778,7 @@ private fun WinnerOverlay(
     val isPlayerWin = winnerName == "Yugi"
 
     Surface(
-        color = Color(0xEE090D16),
+        color = Color(0xF2090D18),
         modifier = Modifier.fillMaxSize()
     ) {
         Column(
@@ -2600,50 +2789,67 @@ private fun WinnerOverlay(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (isPlayerWin) "VICTORY!" else "DEFEAT",
+                text = if (isPlayerWin) (if (isGba) "BATTLE CITY VICTORY!" else "VICTORY!") else "DUEL DEFEAT",
                 color = if (isPlayerWin) MillenniumGold else AttackRed,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontSize = if (isGba && isPlayerWin) 26.sp else 30.sp,
+                fontWeight = FontWeight.Black,
                 letterSpacing = 2.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = if (isPlayerWin) "You defeated $opponentName!" else "$opponentName was victorious.",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            Text(
+                text = if (isPlayerWin) "You defeated $opponentName!" else "$opponentName was victorious.",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             Surface(
-                color = Color(0xFF131722),
-                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF131A2B),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .border(1.dp, MillenniumGold, RoundedCornerShape(8.dp))
+                    .fillMaxWidth(0.92f)
+                    .border(1.dp, MillenniumGold, RoundedCornerShape(10.dp))
                     .padding(12.dp)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = if (isPlayerWin) "+3 Deck Capacity Earned!" else "+2 Deck Capacity Earned",
-                        color = if (isPlayerWin) LifePointGreen else Color(0xFF94A3B8),
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp
-                    )
-                    Text(
-                        text = "Total Deck Capacity: $deckCapacity DC (Level $duelistLevel)",
-                        color = Color(0xFFCBD5E1),
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    if (isGba) {
+                        Text(
+                            text = if (isPlayerWin) "Battle City Tournament Win Recorded!" else "Match Completed",
+                            color = if (isPlayerWin) LifePointGreen else Color(0xFF94A3B8),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Record vs $opponentName: $opponentWins Wins",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 11.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = if (isPlayerWin) "+3 Deck Capacity Earned!" else "+2 Deck Capacity Earned",
+                            color = if (isPlayerWin) LifePointGreen else Color(0xFF94A3B8),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Total Deck Capacity: $deckCapacity DC (Level $duelistLevel)",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
 
                     if (isPlayerWin && rewardCard != null) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "🎁 CARD WON FROM $opponentName:",
+                            text = "🎁 CARD REWARD WON FROM $opponentName:",
                             color = MillenniumGold,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black
@@ -2651,9 +2857,10 @@ private fun WinnerOverlay(
                         Spacer(modifier = Modifier.height(6.dp))
                         MiniCardPreview(rewardCard)
                         Text(
-                            text = "(Added to your Trunk Chest)",
+                            text = "Added to your Trunk Inventory",
                             color = Color(0xFF86EFAC),
-                            fontSize = 9.sp,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
@@ -2666,9 +2873,9 @@ private fun WinnerOverlay(
                 onClick = onRestart,
                 colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold),
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(0.6f)
+                modifier = Modifier.fillMaxWidth(0.7f).height(44.dp)
             ) {
-                Text("Rematch", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("Rematch Duel", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 13.sp)
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -2677,9 +2884,9 @@ private fun WinnerOverlay(
                 onClick = onExit,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(0.6f)
+                modifier = Modifier.fillMaxWidth(0.7f).height(44.dp)
             ) {
-                Text("Return to Stage 1 Map", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(if (isGba) "Return to Campaign Hub" else "Return to Map", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
     }
