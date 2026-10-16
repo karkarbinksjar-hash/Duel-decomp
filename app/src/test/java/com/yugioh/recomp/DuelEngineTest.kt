@@ -741,4 +741,29 @@ class DuelEngineTest {
         assertNull("Attacker must be destroyed by Man-Eater Bug's flip effect!", testEngine.opponent.monsterZones[0])
         assertTrue("Blue-Eyes must be in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Blue-Eyes White Dragon" })
     }
+
+    @Test
+    fun testTristanTaylorRookieDeckHasNoVorseRaiderAndFairStats() {
+        val tristanDeck = GbaCampaignManager.buildOpponentDeck("Tristan Taylor")
+        assertEquals("Tristan's deck must contain exactly 40 cards", 40, tristanDeck.size)
+        assertFalse("Tristan must NEVER have Vorse Raider in his deck!", tristanDeck.any { it.name == "Vorse Raider" })
+        assertFalse("Tristan must NEVER have Gemini Elf in his deck!", tristanDeck.any { it.name == "Gemini Elf" })
+        assertFalse("Tristan must NEVER have La Jinn in his deck!", tristanDeck.any { it.name.startsWith("La Jinn") })
+
+        val highAtkMonsters = tristanDeck.filter { it.isMonster && it.atk > 1700 }
+        assertTrue("Tristan should not have any monster with ATK > 1700", highAtkMonsters.isEmpty())
+
+        val battleOxCount = tristanDeck.count { it.name == "Battle Ox" }
+        assertEquals("Tristan should have at most 1 signature Battle Ox", 1, battleOxCount)
+    }
+
+    @Test
+    fun testTier1DecksAuthenticCardCounts() {
+        listOf("Tristan Taylor", "Tea Gardner", "Yugi Muto", "Joey Wheeler", "Bakura Ryou").forEach { duelist ->
+            val deck = GbaCampaignManager.buildOpponentDeck(duelist)
+            assertEquals("$duelist must have a 40 card deck", 40, deck.size)
+            assertFalse("$duelist must not have Vorse Raider", deck.any { it.name == "Vorse Raider" })
+            assertFalse("$duelist must not have Gemini Elf", deck.any { it.name == "Gemini Elf" })
+        }
+    }
 }

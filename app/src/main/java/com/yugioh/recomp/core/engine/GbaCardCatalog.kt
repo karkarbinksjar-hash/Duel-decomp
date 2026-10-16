@@ -1219,6 +1219,214 @@ object GbaCardCatalog {
         password = "83555666"
     )
 
+    val AQUA_MADOOR = Card(
+        id = 900,
+        name = "Aqua Madoor",
+        atk = 1200,
+        def = 2000,
+        level = 4,
+        attribute = CardAttribute.WATER,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.SPELLCASTER,
+        description = "A wizard of the waters that summons a massive wall of liquid to defend against attacks.",
+        password = "85639857"
+    )
+
+    val CYBER_FALCON = Card(
+        id = 901,
+        name = "Cyber Falcon",
+        atk = 1400,
+        def = 1200,
+        level = 4,
+        attribute = CardAttribute.WIND,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.MACHINE,
+        description = "A jet-powered mechanical bird that attacks with razor-sharp talons.",
+        password = "30655537"
+    )
+
+    val BIG_EYE = Card(
+        id = 902,
+        name = "Big Eye",
+        atk = 1200,
+        def = 1000,
+        level = 4,
+        attribute = CardAttribute.DARK,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.FIEND,
+        description = "A curious fiend with a giant hypnotic eye that peers into the unseen.",
+        password = "16768380"
+    )
+
+    val SKELENGEL = Card(
+        id = 903,
+        name = "Skelengel",
+        atk = 900,
+        def = 400,
+        level = 2,
+        attribute = CardAttribute.LIGHT,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.FAIRY,
+        description = "FLIP: Draw 1 card from your Deck.",
+        password = "60694662"
+    )
+
+    val BEAVER_WARRIOR = Card(
+        id = 904,
+        name = "Beaver Warrior",
+        atk = 1200,
+        def = 1500,
+        level = 4,
+        attribute = CardAttribute.EARTH,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.BEAST_WARRIOR,
+        description = "What this creature lacks in size it makes up for in defense when battling in the prairie.",
+        password = "32452818"
+    )
+
+    val PETIT_ANGEL = Card(
+        id = 905,
+        name = "Petit Angel",
+        atk = 600,
+        def = 900,
+        level = 3,
+        attribute = CardAttribute.LIGHT,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.FAIRY,
+        description = "A quick-moving and mischievous little angel.",
+        password = "38142739"
+    )
+
+    val SHINING_FRIENDSHIP = Card(
+        id = 906,
+        name = "Shining Friendship",
+        atk = 1300,
+        def = 1100,
+        level = 4,
+        attribute = CardAttribute.LIGHT,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.FAIRY,
+        description = "The peacemaker who brings peace to the hearts of all living creatures.",
+        password = "82085619"
+    )
+
+    val HAPPY_LOVER = Card(
+        id = 907,
+        name = "Happy Lover",
+        atk = 800,
+        def = 500,
+        level = 2,
+        attribute = CardAttribute.LIGHT,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.FAIRY,
+        description = "A tiny fairy with radiant wings that shoots heart-shaped beams from its wand.",
+        password = "99001362"
+    )
+
+    val WHITE_ZOMBIE = Card(
+        id = 908,
+        name = "White Zombie",
+        atk = 1200,
+        def = 400,
+        level = 3,
+        attribute = CardAttribute.DARK,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.ZOMBIE,
+        description = "A decaying zombie with sunken eyes and ghastly white flesh.",
+        password = "73891874"
+    )
+
+    val ARMORED_ZOMBIE = Card(
+        id = 909,
+        name = "Armored Zombie",
+        atk = 1500,
+        def = 0,
+        level = 3,
+        attribute = CardAttribute.DARK,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.ZOMBIE,
+        description = "A ferocious zombie warrior clad in rusted chainmail.",
+        password = "20277860"
+    )
+
+    val DRAGON_ZOMBIE = Card(
+        id = 910,
+        name = "Dragon Zombie",
+        atk = 1600,
+        def = 0,
+        level = 3,
+        attribute = CardAttribute.DARK,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.ZOMBIE,
+        description = "A dragon revived by dark magic; its breath is toxic and lethal.",
+        password = "66672569"
+    )
+
+    val BABY_DRAGON_GBA = Card(
+        id = 911,
+        name = "Baby Dragon",
+        atk = 1200,
+        def = 700,
+        level = 3,
+        attribute = CardAttribute.WIND,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.DRAGON,
+        description = "Much more than just a child, this dragon is gifted with untapped power.",
+        password = "88819587"
+    )
+
+    val TIME_WIZARD_GBA = Card(
+        id = 912,
+        name = "Time Wizard",
+        atk = 500,
+        def = 400,
+        level = 2,
+        attribute = CardAttribute.LIGHT,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.SPELLCASTER,
+        description = "Joey's lucky pendulum wizard capable of aging monsters forward in time.",
+        password = "71625222"
+    )
+
+    val WABOKU_GBA = Card(
+        id = 913,
+        name = "Waboku",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.TRAP,
+        cardType = CardType.TRAP,
+        monsterType = MonsterType.NONE,
+        description = "Make all battle damage inflicted by monsters on your opponent's side of the field 0 during this turn.",
+        password = "12607053"
+    )
+
+    val DIAN_KETO_GBA = Card(
+        id = 914,
+        name = "Dian Keto the Cure Maiden",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        description = "Increases your Life Points by 1000 points.",
+        password = "84257640"
+    )
+
+    val SKULL_DICE = Card(
+        id = 915,
+        name = "Skull Dice",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.TRAP,
+        cardType = CardType.TRAP,
+        monsterType = MonsterType.NONE,
+        description = "Roll a 6-sided die. All monsters currently controlled by your opponent lose ATK and DEF equal to the result x 100.",
+        password = "00126218"
+    )
+
     val ALL_GBA_CARDS = listOf(
         JINZO,
         BUSTER_BLADER,
@@ -1312,6 +1520,22 @@ object GbaCardCatalog {
         MIRROR_FORCE,
         SEVEN_TOOLS_BANDIT,
         TRAP_HOLE,
-        RING_OF_DESTRUCTION
+        RING_OF_DESTRUCTION,
+        AQUA_MADOOR,
+        CYBER_FALCON,
+        BIG_EYE,
+        SKELENGEL,
+        BEAVER_WARRIOR,
+        PETIT_ANGEL,
+        SHINING_FRIENDSHIP,
+        HAPPY_LOVER,
+        WHITE_ZOMBIE,
+        ARMORED_ZOMBIE,
+        DRAGON_ZOMBIE,
+        BABY_DRAGON_GBA,
+        TIME_WIZARD_GBA,
+        WABOKU_GBA,
+        DIAN_KETO_GBA,
+        SKULL_DICE
     )
 }
