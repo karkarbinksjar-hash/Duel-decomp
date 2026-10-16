@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.yugioh.recomp.core.audio.ChiptuneSynthesizer
 import com.yugioh.recomp.core.engine.*
 import com.yugioh.recomp.core.rom.RomAssetCache
+import com.yugioh.recomp.core.rom.RomPlatform
 import com.yugioh.recomp.ui.theme.*
 import kotlin.math.*
 import kotlinx.coroutines.delay
@@ -66,7 +67,12 @@ fun DuelScreen(
 ) {
     val engine = remember {
         DuelEngine().apply {
-            startDuel(DdsCampaignManager.selectedOpponentName)
+            val opp = if (RomAssetCache.activeTarget?.platform == RomPlatform.GBA) {
+                GbaCampaignManager.selectedOpponentName
+            } else {
+                DdsCampaignManager.selectedOpponentName
+            }
+            startDuel(opp)
         }
     }
 

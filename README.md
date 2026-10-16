@@ -6,85 +6,79 @@ A native Android, portrait-oriented Yu-Gi-Oh! card game engine inspired by the a
 
 ## Architecture & Legal Compliance
 
-The engine **does not bundle or ship with copyrighted game assets or full ROMs**. It is strictly a clean-room decompiled native runner for users to play their legally obtained cartridge dumps. The engine dynamically extracts, parses, and rebuilds game graphics, audio, card data, and text at runtime from user-supplied official Game Boy Color (GBC) and Game Boy Advance (GBA) Yu-Gi-Oh! cartridges.
+The engine **does not bundle or ship with copyrighted game assets, ROM dumps, or proprietary image files**. It is strictly a clean-room decompiled native runner for users to play their legally obtained cartridge dumps. The engine dynamically extracts, parses, and rebuilds game graphics, audio, card data, and text at runtime from user-supplied official Game Boy Advance (GBA) and Game Boy Color (GBC) Yu-Gi-Oh! cartridges.
 
 ### Base Target & Checksum Verification
-- **Primary GBC Entry Point**: *Yu-Gi-Oh! Dark Duel Stories* (USA)
+- **GBA Primary Target**: *Yu-Gi-Oh! The Eternal Duelist Soul* (USA)
+  - Canonical SHA-1: `510fbba212aca9bab95ea12f8fd933e62ee34dea`
+  - Internal Cartridge Header: `AGB-AYGE`
+- **GBC Entry Point**: *Yu-Gi-Oh! Dark Duel Stories* (USA)
   - Canonical SHA-1: `1952d343bdfb5625bd23a8569cde6fd61a911502`
   - CRC-32: `803a56ae`
   - Internal Cartridge Header: `YU-GI-OH! DDS`
-- **GBA Expansion Architecture**: Modular support for *Yu-Gi-Oh! The Eternal Duelist Soul* (`510fbba212aca9bab95ea12f8fd933e62ee34dea`) and *Yu-Gi-Oh! Worldwide Edition* (`1e52d66f5f8a7c4f207d80ba4fccf55e`).
+- **Strict Anti-Bypass Architecture**: Gameplay is strictly locked until a genuine, untrimmed cartridge dump matching canonical SHA-1 checksums is provided via the native file selector. Zero synthetic test dumps or bypass buttons are exposed in production builds.
 
 ---
 
 ## Key Features
 
-1. **Strict Clean-Room ROM Ingestion Pipeline**:
-   - `DdsRomParser`: Parses Nintendo Game Boy Color cartridge headers directly from ROM streams.
-   - `RomValidator`: Cryptographic SHA-1 and CRC-32 validation against canonical No-Intro cartridge headers. Gameplay remains strictly locked until an official cartridge dump is validated.
-   - `GbcTileDecoder`: Decodes 2bpp Game Boy Color planar graphics and 15-bit BGR color palettes (`0b0BBBBBGGGGGRRRRR`) into Android native textures.
-   - `CardArtRenderer`: Generates authentic 4-color Game Boy Color elemental palettes and iconic retro pixel-art sprites, eliminating procedural diagonal slash-line placeholders.
-   - `RomAssetCache`: Dynamic in-memory texture cache populated exclusively upon verified ROM load.
+1. **Dynamic High-Resolution Card Artwork Pipeline (`CardArtworkLoader`)**:
+   - Zero copyrighted art files packaged into the binary release.
+   - At runtime, authentic Kazuki Takahashi card artwork scans (matching physical TCG card scans, including *Armored Lizard* `15480588`) are streamed dynamically on-demand using canonical 8-digit passcodes.
+   - **High-Performance Two-Tier Caching**:
+     - *In-Memory Cache*: `ConcurrentHashMap<String, ImageBitmap>` ensures buttery-smooth 60fps scrolling and instant UI rendering.
+     - *Local Disk Cache*: `context.cacheDir/card_art/` caches artwork persistently on device so cards remain available offline once fetched.
+   - Seamless fallback to high-definition 144×208 elemental crest card frames if offline prior to initial download.
 
-2. **Authentic Dark Duel Stories (GBC) Deck & Campaign Mechanics**:
-   - **Canonical 40-Card Starter Deck**: Authentic starter card pool strictly composed of cards with Deck Cost $\le 15$ (e.g. *Shadow Specter*, *Mystery Hand*, *Masked Clown*, *Mech Mole Zombie*, *Frog The Jam*, *Sinister Serpent*, *Droll Bird*, *Kaminarikozou*, *Air Marmot*, *Yamatano Dragon Scroll*).
+2. **Authentic *The Eternal Duelist Soul* (EDS) Starting Decks & 5-Tier Campaign Ladder**:
+   - **Choice of 3 Canonical Starting Decks**:
+     - **Black Deck** (Default): Earth & Dark beatdown featuring **Armored Lizard** (`15480588`), *Summoned Skull*, *Sangan*, *Bean Soldier*, *Raigeki*, *Pot of Greed*, *Change of Heart*, *Mirror Force*, and *Trap Hole*.
+     - **Red Deck**: Fiery offensive deck featuring *Axe Raider*, *7 Colored Fish*, *Harpie Lady*, *Dark Hole*, *Pot of Greed*, *Snatch Steal*, and *Swords of Revealing Light*.
+     - **Green Deck**: Heavy warrior deck featuring *Judge Man*, *Battle Ox*, *Armored Lizard*, *Premature Burial*, *Ring of Destruction*, and *Magic Jammer*.
+   - **5-Tier Battle City Tournament Opponent Ladder**:
+     - **Tier 1**: Tristan Taylor, Tea Gardner, Yugi Muto, Joey Wheeler, Bakura Ryou (Unlocked by default).
+     - **Tier 2**: Espa Roba, Mako Tsunami, Rex Raptor, Weevil Underwood, Mai Valentine (Unlocked after 2 wins each or 10 total wins).
+     - **Tier 3**: Lumis and Umbra, Arkana, Rare Hunter, Strings, Marik Ishtar (Unlocked after 3 wins each or 25 total wins).
+     - **Tier 4**: Yami Bakura, Ishizu Ishtar, Seto Kaiba, Shadi, Yami Yugi (Unlocked after 4 wins each or 45 total wins).
+     - **Tier 5**: Maximillion Pegasus, Simon Muran, Duel Computer, Solomon Muto (Unlocked after 5 wins each or 70 total wins).
+   - **Interactive Campaign Hub**: Starting deck switcher buttons, Tier filter tabs (`All`, `T1`, `T2`, `T3`, `T4`, `T5`) with lock indicators (`🔒`), win counters, and opponent profiles.
+
+3. **Intelligent, Aggressive Combat AI Engine**:
+   - **Simulated Turn Planning**: The AI evaluates board states after planned Normal and Tribute Summons, ensuring newly summoned monsters (e.g. *Armored Lizard*, *Jinzo*, *Vorse Raider*) actively declare attacks.
+   - **Competitive Attack Targeting**:
+     - Prioritizes destroying Attack position monsters with lower ATK and inflicting battle damage to the player.
+     - Destroys Defense position monsters whose DEF is lower than the attacker's ATK.
+     - Attacks face-down Defense position monsters to clear opponent back lines.
+     - Trades evenly matched monsters (equal ATK) when holding high-stat attackers ($\ge 1400$ ATK).
+     - Declares Direct Attacks whenever the player's monster field is clear.
+     - Avoids reckless suicide attacks against stronger cards.
+   - **Paced Step-by-Step Sequencer**: Turn progression is visibly observable with banner announcements, phase transitions, attack laser beams, screen shake, clash viewports, and floating damage numbers.
+
+4. **Authentic Dark Duel Stories (GBC) Deck & Campaign Mechanics**:
+   - **Canonical 40-Card Starter Deck**: Strictly composed of cards with Deck Cost $\le 15$.
    - **Deck Capacity & Duelist Level Progression**:
      - Player starts at **Duelist Level 15** and **Deck Capacity 400 DC**.
      - Monster Deck Cost: $\frac{\text{ATK} + \text{DEF}}{100}$.
-     - Duelist Level Formula: $\text{Level} = \left\lfloor \frac{\text{Deck Capacity} - 400}{3} \right\rfloor + 15$.
-     - Total deck cost must not exceed current Deck Capacity, and cards with individual cost exceeding Duelist Level cannot be used.
-     - Winning duels awards **+3 Deck Capacity** and a card won from the opponent's drop pool added directly to the Trunk Chest (+2 DC on defeat).
-   - **Deck Construction Screen**: Dedicated 40-card active deck vs Trunk inventory chest manager with live Deck Capacity meter, card inspection modal, and DC validation before launching duels.
-   - **Stage 1 Domino Town Campaign Hub**: Authentic campaign map featuring Tristan Taylor, Joey Wheeler, Mai Valentine, Bakura, and Seto Kaiba with win counters, duelist profile previews, and drop reward tracking.
+     - Winning duels awards **+3 Deck Capacity** and cards won from opponent drop pools added directly to Trunk.
+   - **GBC Duel Rules**: 5-card hand limit, no-tribute normal summons bounded by DC, elemental alignment dominance wheel (*Shadow* $\rightarrow$ *Light* $\rightarrow$ *Fiend* $\rightarrow$ *Dreams* $\rightarrow$ *Pyro* $\rightarrow$ *Forest* $\rightarrow$ *Wind* $\rightarrow$ *Earth* $\rightarrow$ *Thunder* $\rightarrow$ *Aqua* $\rightarrow$ *Pyro*).
 
-3. **Authentic GBC Duel Engine Rules**:
-   - **5-Card Hand Draw Limit**: Strictly adheres to the DDS maximum hand capacity of 5 cards; draw is skipped when hand is full.
-   - **No Tribute Normal Summons**: High-level monsters (Level 5-8) can be summoned directly to the field without sacrificing tributes, bounded by Deck Capacity and Duelist Level.
-   - **On-the-Field DDS Fusions**: Directly dragging or playing compatible monsters onto occupied field slots triggers authentic GBC fusions (e.g., Dragon + Thunder = *Twin-Headed Thunder Dragon*, Dragon + Zombie = *Zombie Dragon*, Time Wizard + Baby Dragon = *Thousand Dragon*).
-   - **Elemental Alignment Dominance Wheel**:
-     $$\text{Shadow/Dark} \rightarrow \text{Light} \rightarrow \text{Fiend} \rightarrow \text{Dreams} \rightarrow \text{Pyro} \rightarrow \text{Forest} \rightarrow \text{Wind} \rightarrow \text{Earth} \rightarrow \text{Thunder} \rightarrow \text{Aqua} \rightarrow \text{Pyro}$$
-     Monsters with an elemental advantage immediately destroy the opponent regardless of raw ATK/DEF.
-   - **Counter Traps & Spells**: Implemented *Mirror Force*, *Trap Hole*, *Waboku*, *Raigeki*, *Dark Hole*, *Pot of Greed*, and *Dian Keto*.
+5. **High-Definition Visual Presentation & Modernized Neon Arena**:
+   - **144×208 Ultra-Sharp Resolution**: Official 59:86 Yu-Gi-Oh! card ratio with realistic 3D bevels, brushed metal nameplates, and drop shadow borders.
+   - **Millennium Eye Card Back**: Deep swirled mahogany/chocolate background with dual concentric gold rings and Millennium Eye emblem.
+   - **3D Glassmorphic Attribute Orbs & Star Level Rows**: Glassmorphic attribute gems with specular glints and facet star borders.
+   - **Holographic Prismatic Shimmer**: Prismatic foil shimmer overlay across Ultra Rare cards.
+   - **Dynamic Duel Animation Suite**: Golden Millennium summoning portal, clash impact bursts with screen shake, shattered card destruction fragments, and animated rolling Life Points counter.
+   - **CRT/LCD Dot-Matrix Shader**: High-performance optional scanline overlay with toggle in the Campaign Hub.
 
-4. **Game Boy Color LCD Screen Shader Overlay**:
-   - High-performance `GbcShaderOverlay` simulating authentic Game Boy Color TFT dot-matrix LCD subpixel grid lines and scanlines over the touchscreen.
-   - Toggleable on/off instantly via the `[📺 GBC]` button in the Campaign Hub and Duel header.
+6. **Portrait Architecture & Mobile UX**:
+   - Locked to **Portrait Mode**.
+   - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, facedown hand cards, animated Life Points, floating damage indicators, graveyard counter).
+   - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), combat ticker, attack rays, and clash impact viewports.
+   - **Bottom Section**: Player playfield, persistent selected-card HUD bar, interactive hand carousel, and action buttons.
 
-5. **Mobile UX & Portrait Architecture**:
-   - Strictly locked to **Portrait Mode**.
-   - **Top Section**: Opponent playfield (Monster zones, Spell/Trap zones, facedown hand cards, animated Life Points, floating damage indicators, and graveyard counter).
-   - **Middle Section**: Active duel stage featuring phase ribbons (`DP`, `SP`, `M1`, `BP`, `M2`, `EP`), AI step-by-step announcement overlay, energy attack travel rays, clash impact bursts, and prominent direct attack prompts.
-   - **Bottom Section**: Player playfield, persistent selected-card HUD bar, interactive horizontal hand carousel with visible card titles and stats badges, context-sensitive action controls, and graveyard counter.
-
-6. **Paced AI Turn Sequencer**:
-   - Step-by-step asynchronous turn execution with visible delays, banner announcements, and audio cues for Draw, Spell activations, Trap sets, Summons, Attack declarations, and Turn End transitions.
-
-7. **Game Boy APU Chiptune Synthesizer**:
-   - Pure Kotlin sound generator recreating Game Boy sound channels:
-     - Pulse 1 & Pulse 2 (variable duty cycles and pitch sweeps)
-     - Channel 4 LFSR pseudo-random noise generator
-   - Authentic chiptune audio synthesized for card draws, golden portal summons, attack clashes, damage ticks, card destructions, direct blasts, and victory fanfares.
-
-8. **Dynamic Duel Animation Suite**:
-   - **Golden Millennium Summoning Portal**: Animated golden Millennium rune seal with rotating glyphs, ascending light beams, and bounce-in card scaling.
-   - **Attack Clash & Screen Shake**: Dynamic electric lightning beam connecting combatants, clashing swords emblem, expanding shockwave ring, and multi-frame arena screen shake.
-   - **Explosive Card Destruction**: Shattered card fragments and expanding fiery shockwaves on monster destruction.
-   - **Rolling Life Points Counter**: Smooth decrement steps with pulsing crimson text and rapid chiptune damage ticks.
-   - **Direct Attack Blasts**: Golden beam strikes directly against the opponent's LP header.
-
-9. **High-Definition Card Presentation & Modernized Neon Arena (v1.9.0)**:
-   - **144x208 Ultra-Sharp Resolution**: Official 59:86 Yu-Gi-Oh! card ratio with realistic 3D bevels, rounded corner contours, and drop shadow edges.
-   - **Authentic Millennium Eye Card Back**: Deep swirled mahogany/chocolate background with radial vortex lines, dual concentric gold rings, and detailed golden Millennium Eye emblem.
-   - **3D Glassmorphic Attribute Orbs & Ruby Level Stars**: Attribute gems with golden bezels, specular highlights, and dimensional ruby stars with facet borders.
-   - **Integrated 3x5 Bitmap Typography Engine**: Renders card names, type lines, and metallic `ATK/DEF` scoreboard ribbons directly into card textures.
-   - **Ultra Rare Holographic Prismatic Shimmer**: Dynamic rainbow spectral shimmer foil overlay across iconic and high-level card illustrations.
-   - **Modernized Duel Arena Aesthetics**: Glassmorphic zone pedestals with glowing neon borders, animated LED rolling LP counters with color gradient health gauges, soaring vertical golden summon beam pillars, explosive card destruction bursts, and spell/trap runic activation glows.
-
-10. **CI/CD & Automated Release Pipeline**:
-   - Application ID restored to `com.yugioh.recomp` to ensure in-place updates over previous versions without creating duplicate apps.
-   - Full Gradle Version Catalog (`gradle/libs.versions.toml`).
-   - GitHub Actions CI workflow (`.github/workflows/ci.yml`) running `./gradlew test` and `./gradlew assembleRelease` on every Pull Request and push to `main`.
-   - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building, signing, and attaching official `Duel-decomp-v*.*.*.apk` releases.
+7. **CI/CD & Automated Release Pipeline**:
+   - Application ID locked to `com.yugioh.recomp` guaranteeing seamless in-place updates.
+   - Automated Release workflow (`.github/workflows/release.yml`) triggered on version tags (`v*.*.*`), building, signing, and publishing official APK releases.
 
 ---
 

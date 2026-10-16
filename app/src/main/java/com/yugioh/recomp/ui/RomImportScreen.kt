@@ -48,7 +48,7 @@ fun RomImportScreen(
 
     var validationResult by remember { mutableStateOf<RomValidationResult?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf("Select or inject a Game Boy Color Yu-Gi-Oh! ROM") }
+    var statusMessage by remember { mutableStateOf("Select an official cartridge dump to verify SHA-1 and begin.") }
 
     fun processRomBytes(bytes: ByteArray, fileName: String) {
         coroutineScope.launch {
@@ -58,9 +58,6 @@ fun RomImportScreen(
                 val res = RomValidator.validate(bytes)
                 if (res is RomValidationResult.Valid) {
                     RomAssetCache.populateFromRom(res.target, bytes)
-                } else if (res is RomValidationResult.UnsupportedRom && res.detectedTitle.contains("YU-GI-OH", ignoreCase = true)) {
-                    // Fallback target for development/synthetic
-                    RomAssetCache.populateFromRom(RomTarget.DARK_DUEL_STORIES_USA, bytes)
                 }
                 res
             }
@@ -70,7 +67,7 @@ fun RomImportScreen(
                 is RomValidationResult.Valid -> "Target ROM verified and assets extracted successfully!"
                 is RomValidationResult.ChecksumMismatch -> "Cartridge title matches, but SHA-1 failed. Verify untrimmed No-Intro dump."
                 is RomValidationResult.CorruptedHeader -> "Invalid header: ${result.reason}"
-                is RomValidationResult.UnsupportedRom -> "Unsupported ROM header: ${result.detectedTitle}"
+                is RomValidationResult.UnsupportedRom -> "Unsupported ROM: ${result.detectedTitle}. Please provide an authentic EDS (GBA) or DDS (GBC) dump."
             }
         }
     }
@@ -83,7 +80,7 @@ fun RomImportScreen(
                 try {
                     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     if (bytes != null) {
-                        processRomBytes(bytes, uri.lastPathSegment ?: "user_rom.gbc")
+                        processRomBytes(bytes, uri.lastPathSegment ?: "user_rom")
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
@@ -128,21 +125,21 @@ fun RomImportScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = "Duel-decomp",
-                color = MillenniumGold,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.sp
-            )
+        Text(
+            text = "Duel-decomp",
+            color = MillenniumGold,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 1.sp
+        )
 
         Text(
-            text = "Dynamic Asset & Native Card Engine",
+            text = "Clean Dynamic Asset Recompilation Engine",
             color = Color.LightGray,
             fontSize = 13.sp
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         // Architectural Compliance Notice
         Surface(
@@ -161,7 +158,7 @@ fun RomImportScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "This APK contains zero copyrighted assets or ROM binaries. Provide an official Game Boy Advance (The Eternal Duelist Soul / Worldwide Edition) or GBC cartridge dump to dynamically extract textures, card tables, and audio.",
+                    text = "This application ships with zero copyrighted assets, ROM dumps, or proprietary binary rips. To unlock duels, you must provide your legally obtained official cartridge ROM file (GBA or GBC). Assets and card tables are dynamically parsed and verified via SHA-1.",
                     color = Color(0xFF94A3B8),
                     fontSize = 11.sp,
                     lineHeight = 15.sp
@@ -169,72 +166,21 @@ fun RomImportScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-        // Hero Quick Start Button: GBA The Eternal Duelist Soul
+        // Primary Action Button: Select Official ROM File
         Button(
-            onClick = {
-                val synthBytes = RomValidator.createSyntheticGbaRom()
-                processRomBytes(synthBytes, "Yu-Gi-Oh! The Eternal Duelist Soul (USA) [Advance].gba")
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+            onClick = { filePickerLauncher.launch("*/*") },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
                 .border(1.5.dp, MillenniumGold, RoundedCornerShape(10.dp))
         ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(24.dp))
+            Icon(Icons.Default.FileOpen, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.Start) {
-                Text("⚡ QUICK START: GBA ADVANCE MODE", fontSize = 12.5.sp, fontWeight = FontWeight.Black, color = Color.White)
-                Text("The Eternal Duelist Soul • 16-Color TCG • Battle City", fontSize = 9.5.sp, color = Color(0xFFC7D2FE))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Action Buttons: File Picker & Verified Samples (GBC / GBA)
-        Button(
-            onClick = { filePickerLauncher.launch("*/*") },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Select Cartridge ROM (.gba / .gbc)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Button(
-                onClick = {
-                    val synthBytes = RomValidator.createSyntheticGbaRom()
-                    processRomBytes(synthBytes, "Yu-Gi-Oh! The Eternal Duelist Soul (USA) [Synthetic].gba")
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3730A3)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Test GBA Dump (EDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Button(
-                onClick = {
-                    val synthBytes = RomValidator.createSyntheticDdsRom()
-                    processRomBytes(synthBytes, "Yu-Gi-Oh! Dark Duel Stories (USA) [Synthetic].gbc")
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Test GBC Dump (DDS)", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-            }
+            Text("SELECT OFFICIAL ROM (.GBA / .GBC)", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -347,7 +293,7 @@ fun RomImportScreen(
                     Text(
                         text = (res as? RomValidationResult.Valid)?.target?.expectedSha1
                             ?: (res as? RomValidationResult.ChecksumMismatch)?.expectedSha1
-                            ?: RomTarget.DARK_DUEL_STORIES_USA.expectedSha1,
+                            ?: RomTarget.ETERNAL_DUELIST_SOUL_USA.expectedSha1,
                         color = Color(0xFF38BDF8),
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
@@ -357,7 +303,7 @@ fun RomImportScreen(
                     if (activePlatform != null) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Platform Mode: ${activePlatform.name} (${if (activePlatform == RomPlatform.GBA) "16-Color Advance" else "2bpp Retro"})",
+                            text = "Platform Mode: ${activePlatform.name} (${if (activePlatform == RomPlatform.GBA) "16-Color Advance • EDS Rules" else "2bpp Retro • DDS Rules"})",
                             color = if (activePlatform == RomPlatform.GBA) Color(0xFFA5B4FC) else MillenniumGold,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -391,13 +337,13 @@ fun RomImportScreen(
                 PipelineStep("2bpp Planar Tile & Palette Decoders", isReady)
                 PipelineStep("800-Card Dark Duel Stories Database", isReady)
                 PipelineStep("4-Channel Game Boy APU Synthesizer", isReady)
-                PipelineStep("GBA Modular Expansion Framework (EDS/WWE)", true)
+                PipelineStep("GBA Modular Expansion Framework (EDS/WWE)", isReady && RomAssetCache.activeTarget?.platform == RomPlatform.GBA)
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Launch Duel Arena
+        // Launch Duel Campaign
         val isVerified = validationResult is RomValidationResult.Valid && RomAssetCache.isAssetPipelineReady
         Button(
             onClick = {
@@ -422,7 +368,7 @@ fun RomImportScreen(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = if (isVerified) "ENTER DUEL ARENA" else "VERIFY OFFICIAL ROM TO PLAY",
+                text = if (isVerified) "ENTER DUEL CAMPAIGN" else "VERIFY OFFICIAL ROM TO PLAY",
                 color = if (isVerified) Color.Black else Color.Gray,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 14.sp

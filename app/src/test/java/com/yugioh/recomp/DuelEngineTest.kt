@@ -454,4 +454,130 @@ class DuelEngineTest {
         val skullPasscode = com.yugioh.recomp.core.rom.CardArtworkLoader.getPasscode(skull)
         assertEquals("70781052", skullPasscode)
     }
+
+    @Test
+    fun testAiAttacksPlayerMonsterWithLowerAtk() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player controls Celtic Guardian (1400 ATK) in Attack position
+        val celtic = Card(
+            id = 24,
+            name = "Celtic Guardian",
+            atk = 1400,
+            def = 1200,
+            level = 4,
+            attribute = CardAttribute.EARTH,
+            cardType = CardType.MONSTER,
+            monsterType = MonsterType.WARRIOR
+        )
+        testEngine.player.monsterZones[0] = DuelCard(card = celtic, position = CardPosition.FACE_UP_ATTACK)
+
+        // Clear opponent hand to isolate battle calculation from random burn spells
+        testEngine.opponent.hand.clear()
+
+        // Opponent controls Armored Lizard (1500 ATK) in Attack position
+        val lizard = GbaCardCatalog.ARMORED_LIZARD
+        testEngine.opponent.monsterZones[0] = DuelCard(card = lizard, position = CardPosition.FACE_UP_ATTACK)
+
+        // Pass turn to opponent
+        testEngine.passTurn(autoRunAi = false)
+        assertFalse(testEngine.isPlayerTurn)
+
+        // Plan AI turn
+        val steps = testEngine.planAiTurnSteps()
+
+        // Verify that an attack step was planned targeting Celtic Guardian!
+        val attackStep = steps.filterIsInstance<AiTurnStep.DeclareAttack>().firstOrNull()
+        assertNotNull("AI must plan an attack step when it controls a monster with higher ATK!", attackStep)
+        assertEquals(0, attackStep!!.attackerSlot)
+        assertEquals(0, attackStep.defenderSlot)
+        assertEquals("Armored Lizard", attackStep.attackerCard.name)
+
+        // Execute all steps
+        for (step in steps) {
+            testEngine.executeAiStep(step)
+        }
+
+        // Celtic Guardian must be destroyed and sent to Graveyard!
+        assertNull("Player monster must be destroyed!", testEngine.player.monsterZones[0])
+        assertTrue("Celtic Guardian must be in player graveyard!", testEngine.player.graveyard.any { it.name == "Celtic Guardian" })
+
+        // Player must take 100 battle damage (1500 - 1400 = 100)
+        assertEquals(7900, testEngine.player.lifePoints)
+    }
+
+    @Test
+    fun testAiAttacksWithNewlySummonedMonster() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent field is empty, but has Armored Lizard (1500 ATK) in hand
+        testEngine.opponent.monsterZones[0] = null
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.ARMORED_LIZARD))
+
+        // Player controls weak monster (1000 ATK)
+        val weakMonster = Card(
+            id = 99,
+            name = "Kuriboh",
+            atk = 300,
+            def = 200,
+            level = 1,
+            attribute = CardAttribute.DARK,
+            cardType = CardType.MONSTER,
+            monsterType = MonsterType.FIEND
+        )
+        testEngine.player.monsterZones[0] = DuelCard(card = weakMonster, position = CardPosition.FACE_UP_ATTACK)
+
+        // Pass turn to opponent
+        testEngine.passTurn(autoRunAi = false)
+        assertFalse(testEngine.isPlayerTurn)
+
+        // Plan AI steps
+        val steps = testEngine.planAiTurnSteps()
+
+        // Must include summon AND attack
+        assertTrue("AI must plan summon", steps.any { it is AiTurnStep.SummonMonster })
+        val attack = steps.filterIsInstance<AiTurnStep.DeclareAttack>().firstOrNull()
+        assertNotNull("AI must plan attack with newly summoned monster!", attack)
+
+        // Execute steps
+        for (step in steps) {
+            testEngine.executeAiStep(step)
+        }
+
+        // Verify player monster was destroyed and damage was dealt
+        assertNull(testEngine.player.monsterZones[0])
+        assertEquals(8000 - (1500 - 300), testEngine.player.lifePoints)
+    }
+
+    @Test
+    fun testAiDirectAttackWhenPlayerFieldEmpty() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player has 0 monsters
+        for (i in 0 until 5) testEngine.player.monsterZones[i] = null
+
+        // Clear opponent hand to isolate battle calculation from random burn spells
+        testEngine.opponent.hand.clear()
+
+        // Opponent controls Armored Lizard (1500 ATK)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        testEngine.passTurn(autoRunAi = false)
+        assertFalse(testEngine.isPlayerTurn)
+
+        val steps = testEngine.planAiTurnSteps()
+        val directAttack = steps.filterIsInstance<AiTurnStep.DeclareAttack>().firstOrNull()
+        assertNotNull("AI must plan direct attack when player field has 0 monsters!", directAttack)
+        assertTrue(directAttack!!.isDirect)
+
+        for (step in steps) {
+            testEngine.executeAiStep(step)
+        }
+
+        assertEquals(8000 - 1500, testEngine.player.lifePoints)
+    }
 }

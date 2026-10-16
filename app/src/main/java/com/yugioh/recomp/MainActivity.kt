@@ -10,6 +10,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.yugioh.recomp.core.engine.DdsCampaignManager
+import com.yugioh.recomp.core.engine.GbaCampaignManager
 import com.yugioh.recomp.ui.CampaignHubScreen
 import com.yugioh.recomp.ui.DeckConstructionScreen
 import com.yugioh.recomp.ui.DuelScreen
@@ -58,7 +59,11 @@ class MainActivity : ComponentActivity() {
                             AppScreen.CAMPAIGN_HUB -> {
                                 CampaignHubScreen(
                                     onStartDuel = { opponentName ->
-                                        DdsCampaignManager.selectedOpponentName = opponentName
+                                        if (com.yugioh.recomp.core.rom.RomAssetCache.activeTarget?.platform == com.yugioh.recomp.core.rom.RomPlatform.GBA) {
+                                            GbaCampaignManager.selectedOpponentName = opponentName
+                                        } else {
+                                            DdsCampaignManager.selectedOpponentName = opponentName
+                                        }
                                         currentScreen = AppScreen.DUEL_ARENA
                                     },
                                     onOpenDeckBuilder = {
