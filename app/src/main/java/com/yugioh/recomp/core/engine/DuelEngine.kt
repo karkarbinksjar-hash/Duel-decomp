@@ -806,6 +806,7 @@ class DuelEngine {
         clashState = null
 
         val nextDuelist = if (isPlayerTurn) player else opponent
+        nextDuelist.resetTurnActions()
         if (isPlayerTurn) {
             turnNumber++
         }
@@ -880,16 +881,28 @@ class DuelEngine {
         }
 
         // Monsters to Summon
+        val virtualAiMonsters = Array<DuelCard?>(5) { opponent.monsterZones[it]?.copy() }
+        val virtualPlayerMonsters = Array<DuelCard?>(5) { player.monsterZones[it]?.copy() }
+
+        // At the start of turn, all AI monsters can attack
+        for (m in virtualAiMonsters) {
+            m?.hasAttackedThisTurn = false
+        }
+
         if (isGbaMode) {
             val monstersInHand = opponent.hand.filter { it.card.isMonster }
             val level7Plus = monstersInHand.filter { it.card.level >= 7 }
             val level5or6 = monstersInHand.filter { it.card.level in 5..6 }
             val level1to4 = monstersInHand.filter { it.card.level in 1..4 }
-            val activeMonsters = (0 until 5).filter { opponent.monsterZones[it] != null }
+            val activeMonsters = (0 until 5).filter { virtualAiMonsters[it] != null }
 
             if (level7Plus.isNotEmpty() && activeMonsters.size >= 2) {
                 val boss = level7Plus.maxByOrNull { it.card.atk }!!
                 val targetSlot = activeMonsters.first()
+                val tribute2 = activeMonsters[1]
+                virtualAiMonsters[activeMonsters[0]] = null
+                virtualAiMonsters[tribute2] = null
+                virtualAiMonsters[targetSlot] = DuelCard(card = boss.card, position = CardPosition.FACE_UP_ATTACK)
                 steps.add(
                     AiTurnStep.SummonMonster(
                         boss.card,
@@ -898,9 +911,10 @@ class DuelEngine {
                         "⚡ TRIBUTE SUMMON! ${opponent.name} sacrifices 2 monsters to summon [${boss.card.name}]! (ATK ${boss.card.atk})"
                     )
                 )
-            } else if (level5or6.isNotEmpty() && activeMonsters.size >= 1) {
+            } else if (level5or6.isNotEmpty() && activeMonsters.isNotEmpty()) {
                 val boss = level5or6.maxByOrNull { it.card.atk }!!
                 val targetSlot = activeMonsters.first()
+                virtualAiMonsters[targetSlot] = DuelCard(card = boss.card, position = CardPosition.FACE_UP_ATTACK)
                 steps.add(
                     AiTurnStep.SummonMonster(
                         boss.card,
@@ -911,8 +925,9 @@ class DuelEngine {
                 )
             } else if (level1to4.isNotEmpty()) {
                 val best = level1to4.maxByOrNull { it.card.atk }!!
-                val emptySlot = opponent.firstEmptyMonsterSlot()
+                val emptySlot = virtualAiMonsters.indexOfFirst { it == null }
                 if (emptySlot != -1) {
+                    virtualAiMonsters[emptySlot] = DuelCard(card = best.card, position = CardPosition.FACE_UP_ATTACK)
                     steps.add(
                         AiTurnStep.SummonMonster(
                             best.card,
@@ -928,9 +943,10 @@ class DuelEngine {
                 .filter { it.card.isMonster }
                 .maxByOrNull { it.card.atk }
 
-            val emptyMonsterSlot = opponent.firstEmptyMonsterSlot()
+            val emptyMonsterSlot = virtualAiMonsters.indexOfFirst { it == null }
             if (summonableMonster != null && emptyMonsterSlot != -1) {
                 val c = summonableMonster.card
+                virtualAiMonsters[emptyMonsterSlot] = DuelCard(card = c, position = CardPosition.FACE_UP_ATTACK)
                 steps.add(
                     AiTurnStep.SummonMonster(
                         c,
@@ -947,10 +963,11 @@ class DuelEngine {
 
         // Attacks
         for (slot in 0 until 5) {
-            val aiMonster = opponent.monsterZones[slot] ?: continue
+            val aiMonster = virtualAiMonsters[slot] ?: continue
             if (aiMonster.position != CardPosition.FACE_UP_ATTACK || aiMonster.hasAttackedThisTurn) continue
 
-            if (player.activeMonstersCount() == 0) {
+            val activePlayerIndices = (0 until 5).filter { virtualPlayerMonsters[it] != null }
+            if (activePlayerIndices.isEmpty()) {
                 // Direct Attack!
                 steps.add(
                     AiTurnStep.DeclareAttack(
@@ -963,36 +980,64 @@ class DuelEngine {
                         announcement = "⚔ DIRECT ATTACK! ${aiMonster.card.name} strikes directly for ${aiMonster.card.atk} damage!"
                     )
                 )
+                aiMonster.hasAttackedThisTurn = true
             } else {
-                // Monster attack
+                // Monster attack: target monster with lower ATK, lower DEF, equal ATK, or face-down defense
                 var bestTarget: Int? = null
-                var maxDmg = -1
+                var bestScore = -99999
 
-                for (pSlot in 0 until 5) {
-                    val pMon = player.monsterZones[pSlot] ?: continue
-                    val targetStat = if (pMon.position == CardPosition.FACE_UP_ATTACK) pMon.card.atk else pMon.card.def
-                    if (aiMonster.card.atk > targetStat) {
-                        val dmg = aiMonster.card.atk - targetStat
-                        if (dmg > maxDmg) {
-                            maxDmg = dmg
-                            bestTarget = pSlot
+                for (pSlot in activePlayerIndices) {
+                    val pMon = virtualPlayerMonsters[pSlot]!!
+                    val score = when {
+                        pMon.position == CardPosition.FACE_UP_ATTACK && aiMonster.card.atk > pMon.card.atk -> {
+                            10000 + (aiMonster.card.atk - pMon.card.atk)
                         }
+                        pMon.position.isDefense && aiMonster.card.atk > pMon.card.def -> {
+                            5000 + (aiMonster.card.atk - pMon.card.def)
+                        }
+                        pMon.position == CardPosition.FACE_DOWN_DEFENSE && aiMonster.card.atk >= 1300 -> {
+                            3000
+                        }
+                        pMon.position == CardPosition.FACE_UP_ATTACK && aiMonster.card.atk == pMon.card.atk && aiMonster.card.atk >= 1400 -> {
+                            2000
+                        }
+                        else -> -1
+                    }
+
+                    if (score > bestScore && score > 0) {
+                        bestScore = score
+                        bestTarget = pSlot
                     }
                 }
 
                 if (bestTarget != null) {
-                    val defenderCard = player.monsterZones[bestTarget]?.card
+                    val targetMon = virtualPlayerMonsters[bestTarget]!!
+                    val defenderCard = targetMon.card
+                    val predictedDmg = if (targetMon.position == CardPosition.FACE_UP_ATTACK) {
+                        (aiMonster.card.atk - defenderCard.atk).coerceAtLeast(0)
+                    } else 0
+
                     steps.add(
                         AiTurnStep.DeclareAttack(
                             attackerSlot = slot,
                             attackerCard = aiMonster.card,
                             defenderSlot = bestTarget,
                             defenderCard = defenderCard,
-                            predictedDamage = maxDmg,
+                            predictedDamage = predictedDmg,
                             isDirect = false,
-                            announcement = "⚔ [${aiMonster.card.name}] (ATK ${aiMonster.card.atk}) attacks your [${defenderCard?.name ?: "Monster"}]!"
+                            announcement = "⚔ [${aiMonster.card.name}] (ATK ${aiMonster.card.atk}) attacks your [${defenderCard.name}]!"
                         )
                     )
+                    aiMonster.hasAttackedThisTurn = true
+
+                    val willDestroy = if (targetMon.position == CardPosition.FACE_UP_ATTACK) {
+                        aiMonster.card.atk >= defenderCard.atk
+                    } else {
+                        aiMonster.card.atk > defenderCard.def
+                    }
+                    if (willDestroy) {
+                        virtualPlayerMonsters[bestTarget] = null
+                    }
                 }
             }
         }
