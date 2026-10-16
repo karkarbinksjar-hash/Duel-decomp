@@ -234,7 +234,7 @@ class DuelEngine {
 
             duelist.hand.removeAt(handIndex)
             val pos = if (setDefense) CardPosition.FACE_DOWN_DEFENSE else CardPosition.FACE_UP_ATTACK
-            duelist.monsterZones[targetSlot] = DuelCard(card = card, position = pos)
+            duelist.monsterZones[targetSlot] = DuelCard(card = card, position = pos, canChangePosition = false)
             hasNormalSummonedThisTurn = true
 
             val actionDesc = if (tributesNeeded > 0) "Tribute Summoned" else if (setDefense) "Set" else "Normal Summoned"
@@ -260,7 +260,8 @@ class DuelEngine {
                 duelist.graveyard.add(card)
                 duelist.monsterZones[targetSlot] = DuelCard(
                     card = fusion,
-                    position = if (setDefense) CardPosition.FACE_UP_DEFENSE else CardPosition.FACE_UP_ATTACK
+                    position = if (setDefense) CardPosition.FACE_UP_DEFENSE else CardPosition.FACE_UP_ATTACK,
+                    canChangePosition = false
                 )
                 hasNormalSummonedThisTurn = true
                 return true
@@ -272,7 +273,7 @@ class DuelEngine {
 
         duelist.hand.removeAt(handIndex)
         val pos = if (setDefense) CardPosition.FACE_DOWN_DEFENSE else CardPosition.FACE_UP_ATTACK
-        duelist.monsterZones[targetSlot] = DuelCard(card = card, position = pos)
+        duelist.monsterZones[targetSlot] = DuelCard(card = card, position = pos, canChangePosition = false)
         hasNormalSummonedThisTurn = true
         log("${duelist.name} placed [${card.name}] in Zone ${targetSlot + 1}.")
 
@@ -297,6 +298,7 @@ class DuelEngine {
             return false
         }
 
+        val oldPos = duelCard.position
         duelCard.position = when (duelCard.position) {
             CardPosition.FACE_UP_ATTACK -> CardPosition.FACE_UP_DEFENSE
             CardPosition.FACE_UP_DEFENSE -> CardPosition.FACE_UP_ATTACK
@@ -304,7 +306,44 @@ class DuelEngine {
             else -> CardPosition.FACE_UP_ATTACK
         }
         duelCard.canChangePosition = false
-        log("${duelist.name} changed ${duelCard.card.name} to ${duelCard.position.displayName}")
+        val action = if (oldPos == CardPosition.FACE_DOWN_DEFENSE) "Flip Summoned" else "changed"
+        log("${duelist.name} $action [${duelCard.card.name}] to ${duelCard.position.displayName}.")
+
+        // Flip Summon Triggers (Trap Hole & Flip Effects)
+        if (oldPos == CardPosition.FACE_DOWN_DEFENSE) {
+            val opponentDuelist = if (isPlayer) opponent else player
+            checkTrapHole(opponentDuelist, duelist, slotIndex)
+
+            when (duelCard.card.name) {
+                "Man-Eater Bug" -> {
+                    val oppTarget = (0 until 5).firstOrNull { opponentDuelist.monsterZones[it] != null }
+                    if (oppTarget != null) {
+                        val destroyedMon = opponentDuelist.monsterZones[oppTarget]!!
+                        opponentDuelist.graveyard.add(destroyedMon.card)
+                        opponentDuelist.monsterZones[oppTarget] = null
+                        log("⚡ FLIP EFFECT: [Man-Eater Bug] destroyed [${destroyedMon.card.name}] in Zone ${oppTarget + 1}!")
+                    }
+                }
+                "Needle Worm" -> {
+                    val count = minOf(5, opponentDuelist.deck.size)
+                    log("⚡ FLIP EFFECT: [Needle Worm]! ${opponentDuelist.name} discards top 5 cards from Deck!")
+                    for (i in 0 until count) {
+                        opponentDuelist.graveyard.add(opponentDuelist.deck.removeAt(0))
+                    }
+                }
+                "Morphing Jar" -> {
+                    log("⚡ FLIP EFFECT: [Morphing Jar] activated! Both players discard hands and draw 5 cards!")
+                    player.graveyard.addAll(player.hand.map { it.card })
+                    player.hand.clear()
+                    opponent.graveyard.addAll(opponent.hand.map { it.card })
+                    opponent.hand.clear()
+                    for (i in 0 until 5) {
+                        if (player.deck.isNotEmpty()) drawCard(isPlayer = true)
+                        if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false)
+                    }
+                }
+            }
+        }
         return true
     }
 
@@ -648,6 +687,13 @@ class DuelEngine {
         val aAtk = attackerMonster.card.atk
         val dCard = targetMonster.card
 
+        // Yu-Gi-Oh! Official Rule: When a face-down monster is attacked, it is flipped face-up in the Damage Step before damage calculation
+        val wasFaceDown = targetMonster.position == CardPosition.FACE_DOWN_DEFENSE
+        if (wasFaceDown) {
+            targetMonster.position = CardPosition.FACE_UP_DEFENSE
+            log("${defenderDuelist.name}'s face-down monster was flipped face-up: [${dCard.name}] (${dCard.def} DEF)!")
+        }
+
         // Check Dark Duel Stories Elemental Alignment Dominance (GBC DDS Only)
         if (!isGbaMode && enableDdsAlignmentRule) {
             val aAttr = attackerMonster.card.attribute
@@ -733,8 +779,9 @@ class DuelEngine {
                 log("MUTUAL DESTRUCTION: Both monsters were destroyed in battle.")
             }
         } else {
-            // Defender in Defense Position
+            // Defender in Defense Position (flipped to FACE_UP_DEFENSE if wasFaceDown)
             val dDef = dCard.def
+            val flipPrefix = if (wasFaceDown) "Flipped face-up! " else ""
             if (aAtk > dDef) {
                 defenderDuelist.graveyard.add(dCard)
                 defenderDuelist.monsterZones[targetSlot] = null
@@ -745,32 +792,65 @@ class DuelEngine {
                     isDirectAttack = false,
                     damageDealt = 0,
                     damageToPlayer = false,
-                    resultSummary = "${attackerMonster.card.name} destroys defense monster ${dCard.name}!"
+                    resultSummary = "${flipPrefix}${attackerMonster.card.name} destroys defense monster ${dCard.name}!"
                 )
                 log("${attackerMonster.card.name} ($aAtk ATK) destroyed ${dCard.name} ($dDef DEF). No LP damage.")
             } else if (aAtk < dDef) {
                 val diff = dDef - aAtk
                 attackerDuelist.lifePoints = (attackerDuelist.lifePoints - diff).coerceAtLeast(0)
 
+                // Defender survives in FACE_UP_DEFENSE
                 clashState = ClashState(
                     attackerCard = attackerMonster.card,
                     defenderCard = dCard,
                     isDirectAttack = false,
                     damageDealt = diff,
                     damageToPlayer = isPlayerTurn,
-                    resultSummary = "${dCard.name} holds defense! (-$diff LP to ${attackerDuelist.name})"
+                    resultSummary = "${flipPrefix}${dCard.name} holds defense! (-$diff LP to ${attackerDuelist.name})"
                 )
                 log("${dCard.name}'s defense ($dDef) repelled ${attackerMonster.card.name}! $diff damage to ${attackerDuelist.name}.")
             } else {
+                // Defender survives in FACE_UP_DEFENSE
                 clashState = ClashState(
                     attackerCard = attackerMonster.card,
                     defenderCard = dCard,
                     isDirectAttack = false,
                     damageDealt = 0,
                     damageToPlayer = false,
-                    resultSummary = "Defense held! No cards destroyed."
+                    resultSummary = "${flipPrefix}Defense held! No cards destroyed."
                 )
                 log("Attack equaled defense ($dDef). No damage dealt.")
+            }
+        }
+
+        // Trigger Flip Effects if the attacked monster was flipped face-up
+        if (wasFaceDown) {
+            when (dCard.name) {
+                "Man-Eater Bug" -> {
+                    log("⚡ FLIP EFFECT: [Man-Eater Bug] activates! Attacking monster [${attackerMonster.card.name}] is destroyed!")
+                    if (attackerDuelist.monsterZones[attackerSlot] != null) {
+                        attackerDuelist.graveyard.add(attackerMonster.card)
+                        attackerDuelist.monsterZones[attackerSlot] = null
+                    }
+                }
+                "Needle Worm" -> {
+                    log("⚡ FLIP EFFECT: [Needle Worm] activates! ${attackerDuelist.name} discards top 5 cards from Deck!")
+                    val discards = minOf(5, attackerDuelist.deck.size)
+                    for (i in 0 until discards) {
+                        attackerDuelist.graveyard.add(attackerDuelist.deck.removeAt(0))
+                    }
+                }
+                "Morphing Jar" -> {
+                    log("⚡ FLIP EFFECT: [Morphing Jar] activates! Both players discard hands and draw 5 cards!")
+                    player.graveyard.addAll(player.hand.map { it.card })
+                    player.hand.clear()
+                    opponent.graveyard.addAll(opponent.hand.map { it.card })
+                    opponent.hand.clear()
+                    for (i in 0 until 5) {
+                        if (player.deck.isNotEmpty()) drawCard(isPlayer = true)
+                        if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false)
+                    }
+                }
             }
         }
 
@@ -989,23 +1069,37 @@ class DuelEngine {
                 for (pSlot in activePlayerIndices) {
                     val pMon = virtualPlayerMonsters[pSlot]!!
                     val score = when {
+                        // 1. Face-up Attack position with lower ATK: High priority target!
                         pMon.position == CardPosition.FACE_UP_ATTACK && aiMonster.card.atk > pMon.card.atk -> {
                             10000 + (aiMonster.card.atk - pMon.card.atk)
                         }
-                        pMon.position.isDefense && aiMonster.card.atk > pMon.card.def -> {
+                        // 2. Face-up Defense position with lower DEF: AI knows it can destroy it!
+                        pMon.position == CardPosition.FACE_UP_DEFENSE && aiMonster.card.atk > pMon.card.def -> {
                             5000 + (aiMonster.card.atk - pMon.card.def)
                         }
-                        pMon.position == CardPosition.FACE_DOWN_DEFENSE && aiMonster.card.atk >= 1300 -> {
-                            3000
+                        // 3. Unrevealed Face-Down Defense:
+                        // Only probe if AI has strong ATK (>= 1400) and enough LP (> 1200) to safely absorb possible reflection damage.
+                        // Never attack face-down if AI is at critical LP or has weak monster.
+                        pMon.position == CardPosition.FACE_DOWN_DEFENSE && aiMonster.card.atk >= 1400 && opponent.lifePoints > 1200 -> {
+                            if (opponent.lifePoints > 2500) 3000 else 1500
                         }
-                        pMon.position == CardPosition.FACE_UP_ATTACK && aiMonster.card.atk == pMon.card.atk && aiMonster.card.atk >= 1400 -> {
+                        // 4. Face-up Attack with equal ATK (trade): only if strong monster (>= 1500)
+                        pMon.position == CardPosition.FACE_UP_ATTACK && aiMonster.card.atk == pMon.card.atk && aiMonster.card.atk >= 1500 -> {
                             2000
                         }
+                        // Face-up Defense with DEF >= ATK: NEVER attack (score -1, avoid self-damage wall suicide!)
                         else -> -1
                     }
 
-                    if (score > bestScore && score > 0) {
-                        bestScore = score
+                    // In DDS mode, avoid attacking monsters with elemental advantage
+                    val alignmentPenalty = if (!isGbaMode && enableDdsAlignmentRule && !pMon.position.isFaceDown) {
+                        if (pMon.card.attribute.hasAlignmentAdvantageOver(aiMonster.card.attribute)) -99999 else 0
+                    } else 0
+
+                    val finalScore = if (score > 0) score + alignmentPenalty else -1
+
+                    if (finalScore > bestScore && finalScore > 0) {
+                        bestScore = finalScore
                         bestTarget = pSlot
                     }
                 }
@@ -1013,9 +1107,16 @@ class DuelEngine {
                 if (bestTarget != null) {
                     val targetMon = virtualPlayerMonsters[bestTarget]!!
                     val defenderCard = targetMon.card
+                    val isTargetFaceDown = targetMon.position == CardPosition.FACE_DOWN_DEFENSE
                     val predictedDmg = if (targetMon.position == CardPosition.FACE_UP_ATTACK) {
                         (aiMonster.card.atk - defenderCard.atk).coerceAtLeast(0)
                     } else 0
+
+                    val attackDesc = if (isTargetFaceDown) {
+                        "⚔ [${aiMonster.card.name}] (ATK ${aiMonster.card.atk}) attacks your face-down monster!"
+                    } else {
+                        "⚔ [${aiMonster.card.name}] (ATK ${aiMonster.card.atk}) attacks your [${defenderCard.name}]!"
+                    }
 
                     steps.add(
                         AiTurnStep.DeclareAttack(
@@ -1025,7 +1126,7 @@ class DuelEngine {
                             defenderCard = defenderCard,
                             predictedDamage = predictedDmg,
                             isDirect = false,
-                            announcement = "⚔ [${aiMonster.card.name}] (ATK ${aiMonster.card.atk}) attacks your [${defenderCard.name}]!"
+                            announcement = attackDesc
                         )
                     )
                     aiMonster.hasAttackedThisTurn = true
@@ -1037,6 +1138,10 @@ class DuelEngine {
                     }
                     if (willDestroy) {
                         virtualPlayerMonsters[bestTarget] = null
+                    } else {
+                        // The monster survives and is revealed in FACE_UP_DEFENSE!
+                        // Other AI monsters on this same turn will see its actual DEF and won't suicide into it!
+                        virtualPlayerMonsters[bestTarget] = targetMon.copy(position = CardPosition.FACE_UP_DEFENSE)
                     }
                 }
             }

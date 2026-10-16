@@ -593,4 +593,152 @@ class DuelEngineTest {
 
         assertEquals(8000 - 1500, testEngine.player.lifePoints)
     }
+
+    @Test
+    fun testAttackedFaceDownMonsterFlipsToFaceUpDefenseAndSurvives() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player sets Giant Soldier of Stone (1300 ATK / 2000 DEF) in Face-Down Defense
+        val stoneGiant = Card(
+            id = 55,
+            name = "Giant Soldier of Stone",
+            atk = 1300,
+            def = 2000,
+            level = 3,
+            attribute = CardAttribute.EARTH,
+            cardType = CardType.MONSTER,
+            monsterType = MonsterType.ROCK
+        )
+        testEngine.player.monsterZones[0] = DuelCard(card = stoneGiant, position = CardPosition.FACE_DOWN_DEFENSE)
+
+        // Opponent controls Armored Lizard (1500 ATK) in Attack position
+        testEngine.opponent.monsterZones[0] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        // Pass turn to opponent and enter Battle Phase
+        testEngine.passTurn(autoRunAi = false)
+        while (testEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            testEngine.nextPhase()
+        }
+
+        // Opponent attacks player's face-down monster
+        val attackSuccess = testEngine.declareAttack(attackerSlot = 0, targetSlot = 0)
+        assertTrue("Attack declaration must succeed", attackSuccess)
+
+        // Monster must be flipped to FACE_UP_DEFENSE and survive!
+        val survivingMonster = testEngine.player.monsterZones[0]
+        assertNotNull("Giant Soldier of Stone must survive because DEF (2000) > ATK (1500)!", survivingMonster)
+        assertEquals("Must be flipped to Face-Up Defense Position", CardPosition.FACE_UP_DEFENSE, survivingMonster!!.position)
+        assertEquals(2000, survivingMonster.card.def)
+
+        // Opponent must have taken 500 reflective battle damage (2000 DEF - 1500 ATK = 500)
+        assertEquals(7500, testEngine.opponent.lifePoints)
+
+        // Clash summary must indicate flipped face-up and defense held
+        assertNotNull(testEngine.clashState)
+        assertTrue("Summary should report flipped face-up", testEngine.clashState!!.resultSummary.contains("Flipped face-up"))
+        assertTrue("Summary should report defense held", testEngine.clashState!!.resultSummary.contains("holds defense"))
+    }
+
+    @Test
+    fun testAiDoesNotRepeatedlySuicideIntoFaceUpDefenseWall() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player controls Giant Soldier of Stone (2000 DEF) already face-up in defense
+        val stoneGiant = Card(
+            id = 55,
+            name = "Giant Soldier of Stone",
+            atk = 1300,
+            def = 2000,
+            level = 3,
+            attribute = CardAttribute.EARTH,
+            cardType = CardType.MONSTER,
+            monsterType = MonsterType.ROCK
+        )
+        testEngine.player.monsterZones[0] = DuelCard(card = stoneGiant, position = CardPosition.FACE_UP_DEFENSE)
+
+        // Opponent has empty hand and controls Celtic Guardian (1400 ATK) and Armored Lizard (1500 ATK)
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.monsterZones[0] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+        testEngine.opponent.monsterZones[1] = DuelCard(
+            card = Card(id = 24, name = "Celtic Guardian", atk = 1400, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR),
+            position = CardPosition.FACE_UP_ATTACK
+        )
+
+        testEngine.passTurn(autoRunAi = false)
+        assertFalse(testEngine.isPlayerTurn)
+
+        // Plan AI turn
+        val steps = testEngine.planAiTurnSteps()
+
+        // AI must NOT plan any attack against the 2000 DEF face-up wall!
+        val attackSteps = steps.filterIsInstance<AiTurnStep.DeclareAttack>()
+        assertTrue("AI must not suicide attack into a known face-up defense wall with higher DEF!", attackSteps.isEmpty())
+    }
+
+    @Test
+    fun testAiDoesNotRepeatedlyAttackRevealedWallOnSameTurn() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player has 1 face-down monster with 2000 DEF
+        val stoneGiant = Card(
+            id = 55,
+            name = "Giant Soldier of Stone",
+            atk = 1300,
+            def = 2000,
+            level = 3,
+            attribute = CardAttribute.EARTH,
+            cardType = CardType.MONSTER,
+            monsterType = MonsterType.ROCK
+        )
+        testEngine.player.monsterZones[0] = DuelCard(card = stoneGiant, position = CardPosition.FACE_DOWN_DEFENSE)
+
+        // Opponent has two monsters: Monster 1 (1600 ATK) and Monster 2 (1500 ATK)
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.monsterZones[0] = DuelCard(
+            card = Card(id = 301, name = "Cyber-Tech Alligator", atk = 1600, def = 1400, level = 4, attribute = CardAttribute.WIND, cardType = CardType.MONSTER, monsterType = MonsterType.MACHINE),
+            position = CardPosition.FACE_UP_ATTACK
+        )
+        testEngine.opponent.monsterZones[1] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        testEngine.passTurn(autoRunAi = false)
+        val steps = testEngine.planAiTurnSteps()
+
+        // Monster 1 probes the face-down card, but once revealed, Monster 2 must NOT attack the 2000 DEF wall!
+        val attackSteps = steps.filterIsInstance<AiTurnStep.DeclareAttack>()
+        assertEquals("Only one probe attack should occur on the face-down card; second monster must not suicide into revealed wall!", 1, attackSteps.size)
+    }
+
+    @Test
+    fun testFlipEffectManEaterBugDestroysAttackerWhenFlipped() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player sets Man-Eater Bug (450 ATK / 600 DEF) face-down
+        testEngine.player.monsterZones[0] = DuelCard(card = GbaCardCatalog.MAN_EATER_BUG, position = CardPosition.FACE_DOWN_DEFENSE)
+
+        // Opponent controls Blue-Eyes White Dragon (3000 ATK)
+        testEngine.opponent.monsterZones[0] = DuelCard(
+            card = Card(id = 1, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.DRAGON),
+            position = CardPosition.FACE_UP_ATTACK
+        )
+
+        testEngine.passTurn(autoRunAi = false)
+        while (testEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            testEngine.nextPhase()
+        }
+
+        // Opponent attacks Man-Eater Bug
+        testEngine.declareAttack(attackerSlot = 0, targetSlot = 0)
+
+        // Man-Eater Bug is destroyed by battle (600 < 3000)
+        assertNull("Man-Eater Bug destroyed by battle", testEngine.player.monsterZones[0])
+        assertTrue("Man-Eater Bug in player graveyard", testEngine.player.graveyard.any { it.name == "Man-Eater Bug" })
+
+        // FLIP EFFECT: Blue-Eyes White Dragon must also be destroyed and in opponent graveyard!
+        assertNull("Attacker must be destroyed by Man-Eater Bug's flip effect!", testEngine.opponent.monsterZones[0])
+        assertTrue("Blue-Eyes must be in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Blue-Eyes White Dragon" })
+    }
 }
