@@ -1029,6 +1029,7 @@ fun DuelScreen(
                 opponentName = engine.opponent.name,
                 rewardCard = engine.lastRewardCard,
                 isGba = isGba,
+                isExodiaWin = engine.isExodiaWin,
                 opponentWins = GbaCampaignManager.opponentWins[engine.opponent.name] ?: 0,
                 deckCapacity = DdsCampaignManager.deckCapacity,
                 duelistLevel = DdsCampaignManager.duelistLevel,
@@ -3284,6 +3285,7 @@ private fun WinnerOverlay(
     opponentName: String,
     rewardCard: Card?,
     isGba: Boolean,
+    isExodiaWin: Boolean = false,
     opponentWins: Int,
     deckCapacity: Int,
     duelistLevel: Int,
@@ -3311,13 +3313,73 @@ private fun WinnerOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = if (isPlayerWin) (if (isGba) "BATTLE CITY VICTORY!" else "VICTORY!") else "DUEL DEFEAT",
-                color = if (isPlayerWin) MillenniumGold else AttackRed,
-                fontSize = if (isGba && isPlayerWin) 26.sp else 30.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp
-            )
+            if (isExodiaWin) {
+                Surface(
+                    color = Color(0xFF451A03),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .border(2.dp, MillenniumGold, RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Text(
+                            text = "🌟 EXODIA, OBLITERATE! 🌟",
+                            color = MillenniumGold,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "AUTOMATIC VICTORY: All 5 Forbidden Pieces Gathered!",
+                            color = Color(0xFFFDE68A),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val pieces = listOf(
+                                "Right Leg",
+                                "Left Leg",
+                                "Exodia",
+                                "Right Arm",
+                                "Left Arm"
+                            )
+                            pieces.forEach { piece ->
+                                Surface(
+                                    color = Color(0xFF78350F),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.border(1.dp, MillenniumGold, RoundedCornerShape(4.dp))
+                                ) {
+                                    Text(
+                                        text = piece,
+                                        color = Color.White,
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            } else {
+                Text(
+                    text = if (isPlayerWin) (if (isGba) "BATTLE CITY VICTORY!" else "VICTORY!") else "DUEL DEFEAT",
+                    color = if (isPlayerWin) MillenniumGold else AttackRed,
+                    fontSize = if (isGba && isPlayerWin) 26.sp else 30.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                )
+            }
 
             if (isPlayerWin) {
                 Spacer(modifier = Modifier.height(4.dp))

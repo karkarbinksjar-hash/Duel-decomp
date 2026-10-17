@@ -50,6 +50,12 @@ class DuelEngine {
     var lastRewardCard: Card? = null
         private set
 
+    var isExodiaWin: Boolean = false
+        private set
+
+    fun isToonWorldActive(duelist: Duelist): Boolean =
+        duelist.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Toon World" }
+
     fun dismissClash() {
         clashState = null
     }
@@ -137,6 +143,7 @@ class DuelEngine {
         hasNormalSummonedThisTurn = false
         activeFieldSpell = null
         winner = null
+        isExodiaWin = false
         clashState = null
         lastTriggeredTrap = null
         lastRewardCard = null
@@ -169,6 +176,7 @@ class DuelEngine {
         val card = duelist.deck.removeAt(0)
         duelist.hand.add(DuelCard(card = card))
         log("${duelist.name} drew [${card.name}].")
+        checkWinConditions()
         return card
     }
 
@@ -188,6 +196,9 @@ class DuelEngine {
         }
 
         val duelist = if (isPlayer) player else opponent
+        if (ToonAnimeArchetype.isToonMonster(card) && !isToonWorldActive(duelist)) {
+            return Pair(false, "Requires Toon World face-up on the field to summon Toon monsters")
+        }
         if (isGbaMode) {
             val tributesNeeded = when {
                 card.level >= 7 -> 2
@@ -545,6 +556,42 @@ class DuelEngine {
             opponent.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Imperial Order" }
     }
 
+    fun triggerGraveyardSearcher(card: Card, duelist: Duelist) {
+        if (card.name == "Sangan") {
+            val target = duelist.deck.firstOrNull { it.isMonster && it.atk <= 1500 }
+            if (target != null) {
+                duelist.deck.remove(target)
+                duelist.hand.add(DuelCard(card = target))
+                log("⚡ SEARCH EFFECT: [Sangan] sent to GY! Added [${target.name}] (ATK ${target.atk} <= 1500) from Deck to Hand!")
+                checkWinConditions()
+            }
+        } else if (card.name == "Witch of the Black Forest") {
+            val target = duelist.deck.firstOrNull { it.isMonster && it.def <= 1500 }
+            if (target != null) {
+                duelist.deck.remove(target)
+                duelist.hand.add(DuelCard(card = target))
+                log("⚡ SEARCH EFFECT: [Witch of the Black Forest] sent to GY! Added [${target.name}] (DEF ${target.def} <= 1500) from Deck to Hand!")
+                checkWinConditions()
+            }
+        }
+    }
+
+    fun checkToonWorldDestruction(duelist: Duelist) {
+        if (!isToonWorldActive(duelist)) {
+            val opp = if (duelist === player) opponent else player
+            for (i in 0 until 5) {
+                val m = duelist.monsterZones[i]
+                if (m != null && !m.position.isFaceDown && ToonAnimeArchetype.isToonMonster(m.card)) {
+                    cleanupMonsterEquips(m, duelist, opp)
+                    duelist.graveyard.add(m.card)
+                    duelist.monsterZones[i] = null
+                    triggerGraveyardSearcher(m.card, duelist)
+                    log("📖 TOON COLLAPSE: [${m.card.name}] cannot survive without Toon World and was destroyed!")
+                }
+            }
+        }
+    }
+
     private fun checkTrapHole(trapOwner: Duelist, summoningDuelist: Duelist, summonedSlot: Int) {
         val summonedMonster = summoningDuelist.monsterZones[summonedSlot] ?: return
         if (summonedMonster.position.isFaceDown || summonedMonster.card.atk < 1000) return
@@ -634,9 +681,14 @@ class DuelEngine {
 
         resolveSpellEffect(duelist, opp, card, isPlayer, tempSlot)
 
-        duelist.spellTrapZones[tempSlot] = null
-        if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland") && !card.isEquipSpell) {
-            duelist.graveyard.add(card)
+        val isContinuousOrEquip = card.name == "Toon World" || card.name == "Premature Burial" || card.isEquipSpell
+        if (isContinuousOrEquip) {
+            duelist.spellTrapZones[tempSlot] = DuelCard(card = card, position = CardPosition.FACE_UP_SPELL_TRAP)
+        } else {
+            duelist.spellTrapZones[tempSlot] = null
+            if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland")) {
+                duelist.graveyard.add(card)
+            }
         }
         return true
     }
@@ -702,7 +754,8 @@ class DuelEngine {
 
         resolveSpellEffect(duelist, other, card, isPlayer, slotIndex)
 
-        if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland") && !card.isEquipSpell) {
+        val isContinuousOrEquip = card.name == "Toon World" || card.name == "Premature Burial" || card.isEquipSpell
+        if (!isContinuousOrEquip && card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland")) {
             duelist.spellTrapZones[slotIndex] = null
             duelist.graveyard.add(card)
         }
@@ -812,6 +865,7 @@ class DuelEngine {
                         count++
                     }
                 }
+                checkToonWorldDestruction(opp)
                 log("Harpie's Feather Duster destroyed $count Spell/Trap(s) on ${opp.name}'s field!")
             }
             "Heavy Storm" -> {
@@ -830,6 +884,8 @@ class DuelEngine {
                         count++
                     }
                 }
+                checkToonWorldDestruction(player)
+                checkToonWorldDestruction(opponent)
                 log("Heavy Storm swept away $count Spell/Trap(s) on the field!")
             }
             "Dian Keto the Cure Maiden" -> {
@@ -941,6 +997,77 @@ class DuelEngine {
                     log("[${card.name}] has no valid target monster on the field.")
                 }
             }
+            "Toon World" -> {
+                if (duelist.lifePoints > 1000) {
+                    duelist.lifePoints -= 1000
+                    log("📖 TOON WORLD: ${duelist.name} paid 1000 LP! The fantastical pop-up book opens upon the arena!")
+                } else {
+                    log("Toon World: Insufficient LP to pay 1000 LP cost.")
+                }
+            }
+            "Premature Burial" -> {
+                if (duelist.lifePoints > 800) {
+                    val revivable = duelist.graveyard.filter { it.isMonster }.maxByOrNull { it.atk }
+                    val emptySlot = duelist.firstEmptyMonsterSlot()
+                    if (revivable != null && emptySlot != -1) {
+                        duelist.lifePoints -= 800
+                        duelist.graveyard.remove(revivable)
+                        val dMonster = DuelCard(card = revivable, position = CardPosition.FACE_UP_ATTACK)
+                        dMonster.equippedCards.add(card)
+                        duelist.monsterZones[emptySlot] = dMonster
+                        if (zoneSlot in 0..4) {
+                            duelist.spellTrapZones[zoneSlot]?.equippedTargetSlot = emptySlot
+                        }
+                        log("✝️ PREMATURE BURIAL: ${duelist.name} paid 800 LP! Revived [${revivable.name}] (ATK ${revivable.atk})!")
+                    } else {
+                        log("Premature Burial: No monsters in Graveyard or Monster Zone full.")
+                    }
+                } else {
+                    log("Premature Burial: Insufficient LP to pay 800 LP cost.")
+                }
+            }
+            "Time Wizard" -> {
+                val heads = (0..1).random() == 0
+                if (heads) {
+                    var count = 0
+                    for (i in 0 until 5) {
+                        opp.monsterZones[i]?.let {
+                            cleanupMonsterEquips(it, opp, duelist)
+                            opp.graveyard.add(it.card)
+                            triggerGraveyardSearcher(it.card, opp)
+                            opp.monsterZones[i] = null
+                            count++
+                        }
+                    }
+                    log("⏱️ TIME ROULETTE (HEADS): Time Wizard spun the magic roulette wheel! Destroyed $count opposing monster(s)!")
+                } else {
+                    var selfDmg = 0
+                    for (i in 0 until 5) {
+                        duelist.monsterZones[i]?.let {
+                            cleanupMonsterEquips(it, duelist, opp)
+                            duelist.graveyard.add(it.card)
+                            triggerGraveyardSearcher(it.card, duelist)
+                            selfDmg += it.card.atk / 2
+                            duelist.monsterZones[i] = null
+                        }
+                    }
+                    duelist.lifePoints = (duelist.lifePoints - selfDmg).coerceAtLeast(0)
+                    log("⏱️ TIME ROULETTE (TAILS): Time Wizard backfired! Destroyed all your monsters and inflicted $selfDmg LP damage!")
+                    checkWinConditions()
+                }
+            }
+            "Cup of Ace" -> {
+                val heads = (0..1).random() == 0
+                if (heads) {
+                    drawCard(isPlayer, ignoreHandLimit = true)
+                    drawCard(isPlayer, ignoreHandLimit = true)
+                    log("🏆 CUP OF ACE (HEADS): Lucky flip! ${duelist.name} drew 2 cards!")
+                } else {
+                    drawCard(!isPlayer, ignoreHandLimit = true)
+                    drawCard(!isPlayer, ignoreHandLimit = true)
+                    log("🏆 CUP OF ACE (TAILS): Unlucky flip! ${opp.name} drew 2 cards!")
+                }
+            }
         }
     }
 
@@ -1019,6 +1146,20 @@ class DuelEngine {
                     m.attacksDeclaredThisTurn = m.maxAttacksPerTurn
                     m.canChangePosition = false
                     log("🕸️ [Spellbinding Circle] binds [${m.card.name}]! Cannot attack or change position.")
+                }
+            }
+            "Call of the Haunted" -> {
+                val revivable = duelist.graveyard.filter { it.isMonster }.maxByOrNull { it.atk }
+                val emptySlot = duelist.firstEmptyMonsterSlot()
+                if (revivable != null && emptySlot != -1) {
+                    duelist.graveyard.remove(revivable)
+                    val dMonster = DuelCard(card = revivable, position = CardPosition.FACE_UP_ATTACK)
+                    duelist.monsterZones[emptySlot] = dMonster
+                    duelist.spellTrapZones[slotIndex] = DuelCard(card = trapCard, position = CardPosition.FACE_UP_SPELL_TRAP, equippedTargetSlot = emptySlot)
+                    duelist.graveyard.remove(trapCard)
+                    log("⚰️ CALL OF THE HAUNTED: ${duelist.name} summoned [${revivable.name}] from the Graveyard in Attack Position!")
+                } else {
+                    log("Call of the Haunted: No monsters in Graveyard or Monster Zone is full.")
                 }
             }
         }
@@ -1231,8 +1372,17 @@ class DuelEngine {
 
         // Direct attack check
         if (targetSlot == null) {
-            if (defenderDuelist.activeMonstersCount() > 0) {
+            val isToonAttacker = ToonAnimeArchetype.isToonMonster(attackerMonster.card)
+            val oppHasToon = defenderDuelist.monsterZones.filterNotNull().any { !it.position.isFaceDown && ToonAnimeArchetype.isToonMonster(it.card) }
+            val canBypassMonsters = isToonAttacker && !oppHasToon
+
+            if (defenderDuelist.activeMonstersCount() > 0 && !canBypassMonsters) {
                 log("Cannot attack directly while opponent controls monsters!")
+                return false
+            }
+
+            if (isToonAttacker && attackerMonster.turnsOnField == 0) {
+                log("Toon monsters cannot attack the turn they are summoned!")
                 return false
             }
 
@@ -1281,6 +1431,7 @@ class DuelEngine {
             if (aAttr.hasAlignmentAdvantageOver(dAttr)) {
                 cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
+                triggerGraveyardSearcher(dCard, defenderDuelist)
                 defenderDuelist.monsterZones[targetSlot] = null
                 clashState = ClashState(
                     attackerCard = attackerMonster.card,
@@ -1296,6 +1447,7 @@ class DuelEngine {
             } else if (dAttr.hasAlignmentAdvantageOver(aAttr)) {
                 cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
+                triggerGraveyardSearcher(attackerMonster.card, attackerDuelist)
                 attackerDuelist.monsterZones[attackerSlot] = null
                 clashState = ClashState(
                     attackerCard = attackerMonster.card,
@@ -1319,6 +1471,7 @@ class DuelEngine {
                 defenderDuelist.lifePoints = (defenderDuelist.lifePoints - diff).coerceAtLeast(0)
                 cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
+                triggerGraveyardSearcher(dCard, defenderDuelist)
                 defenderDuelist.monsterZones[targetSlot] = null
 
                 if (attackerMonster.card.name == "White Magical Hat" && diff > 0 && defenderDuelist.hand.isNotEmpty()) {
@@ -1341,6 +1494,7 @@ class DuelEngine {
                 attackerDuelist.lifePoints = (attackerDuelist.lifePoints - diff).coerceAtLeast(0)
                 cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
+                triggerGraveyardSearcher(attackerMonster.card, attackerDuelist)
                 attackerDuelist.monsterZones[attackerSlot] = null
 
                 clashState = ClashState(
@@ -1355,9 +1509,11 @@ class DuelEngine {
             } else {
                 cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
+                triggerGraveyardSearcher(attackerMonster.card, attackerDuelist)
                 attackerDuelist.monsterZones[attackerSlot] = null
                 cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
+                triggerGraveyardSearcher(dCard, defenderDuelist)
                 defenderDuelist.monsterZones[targetSlot] = null
 
                 clashState = ClashState(
@@ -1377,6 +1533,7 @@ class DuelEngine {
             if (aAtk > dDef) {
                 cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
+                triggerGraveyardSearcher(dCard, defenderDuelist)
                 defenderDuelist.monsterZones[targetSlot] = null
 
                 clashState = ClashState(
@@ -1835,6 +1992,29 @@ class DuelEngine {
     }
 
     private fun checkWinConditions() {
+        if (ToonAnimeArchetype.hasAllExodiaPieces(player.hand)) {
+            winner = player.name
+            isExodiaWin = true
+            log("🌟 EXODIA, OBLITERATE! All 5 Forbidden pieces gathered in ${player.name}'s hand! Instant Victory!")
+            val drop = if (isGbaMode) {
+                GbaCampaignManager.recordDuelResult(opponent.name, won = true)
+            } else {
+                DdsCampaignManager.recordDuelResult(opponent.name, won = true)
+            }
+            lastRewardCard = drop
+            return
+        } else if (ToonAnimeArchetype.hasAllExodiaPieces(opponent.hand)) {
+            winner = opponent.name
+            isExodiaWin = true
+            log("🌟 EXODIA, OBLITERATE! All 5 Forbidden pieces gathered in ${opponent.name}'s hand! Instant Defeat!")
+            if (isGbaMode) {
+                GbaCampaignManager.recordDuelResult(opponent.name, won = false)
+            } else {
+                DdsCampaignManager.recordDuelResult(opponent.name, won = false)
+            }
+            return
+        }
+
         if (player.lifePoints <= 0 && opponent.lifePoints <= 0) {
             winner = "DRAW"
             log("DUEL RESULT: DRAW!")
