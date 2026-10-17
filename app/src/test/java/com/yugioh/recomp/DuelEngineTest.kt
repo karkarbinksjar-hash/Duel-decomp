@@ -758,6 +758,70 @@ class DuelEngineTest {
     }
 
     @Test
+    fun testAttackedMonsterCannotAttackAgainInSameTurn() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Tristan Taylor")
+
+        // Put a monster on player field
+        val monsterCard = Card(id = 10, name = "Armored Lizard", atk = 1500, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.REPTILE)
+        testEngine.player.monsterZones[0] = DuelCard(card = monsterCard, position = CardPosition.FACE_UP_ATTACK)
+
+        // Clear opponent field
+        for (i in 0 until 5) testEngine.opponent.monsterZones[i] = null
+
+        // Advance to Battle Phase
+        while (testEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            testEngine.nextPhase()
+        }
+
+        assertTrue("Armored Lizard should be eligible to attack", testEngine.canMonsterAttack(isPlayer = true, slotIndex = 0))
+
+        // First direct attack: should succeed
+        val attack1Success = testEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue("First direct attack should succeed", attack1Success)
+        assertEquals("Opponent should take 1500 damage (8000 -> 6500)", 6500, testEngine.opponent.lifePoints)
+
+        // Monster should now be marked as attacked
+        assertFalse("Monster should no longer be eligible to attack", testEngine.canMonsterAttack(isPlayer = true, slotIndex = 0))
+        assertTrue("hasAttackedThisTurn must be true", testEngine.player.monsterZones[0]!!.hasAttackedThisTurn)
+        assertFalse("canDeclareAttack must be false", testEngine.player.monsterZones[0]!!.canDeclareAttack)
+
+        // Second direct attack attempt by same monster: MUST BE REJECTED!
+        val attack2Success = testEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertFalse("Second attack by already-attacked monster must be rejected!", attack2Success)
+        assertEquals("Opponent LP must remain 6500 without reduction", 6500, testEngine.opponent.lifePoints)
+    }
+
+    @Test
+    fun testMultiAttackMonsterHayabusaKnightCanAttackTwice() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Tristan Taylor")
+
+        val hayabusa = Card(id = 88, name = "Hayabusa Knight", atk = 1000, def = 700, level = 3, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR)
+        testEngine.player.monsterZones[0] = DuelCard(card = hayabusa, position = CardPosition.FACE_UP_ATTACK)
+
+        for (i in 0 until 5) testEngine.opponent.monsterZones[i] = null
+
+        while (testEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            testEngine.nextPhase()
+        }
+
+        assertTrue("Hayabusa can attack first time", testEngine.canMonsterAttack(isPlayer = true, slotIndex = 0))
+        assertTrue("First attack succeeds", testEngine.declareAttack(0, null))
+        assertEquals(7000, testEngine.opponent.lifePoints)
+
+        // Hayabusa has attacked once, but has maxAttacksPerTurn = 2
+        assertTrue("Hayabusa can attack second time", testEngine.canMonsterAttack(isPlayer = true, slotIndex = 0))
+        assertTrue("Second attack succeeds", testEngine.declareAttack(0, null))
+        assertEquals(6000, testEngine.opponent.lifePoints)
+
+        // Third attack should be rejected
+        assertFalse("Hayabusa cannot attack third time", testEngine.canMonsterAttack(isPlayer = true, slotIndex = 0))
+        assertFalse("Third attack rejected", testEngine.declareAttack(0, null))
+        assertEquals(6000, testEngine.opponent.lifePoints)
+    }
+
+    @Test
     fun testTier1DecksAuthenticCardCounts() {
         listOf("Tristan Taylor", "Tea Gardner", "Yugi Muto", "Joey Wheeler", "Bakura Ryou").forEach { duelist ->
             val deck = GbaCampaignManager.buildOpponentDeck(duelist)
