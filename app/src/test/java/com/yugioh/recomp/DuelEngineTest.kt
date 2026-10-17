@@ -1692,5 +1692,171 @@ class DuelEngineTest {
         assertTrue("Seven Tools in player graveyard", testEngine.player.graveyard.any { it.name == "Seven Tools of the Bandit" })
         assertTrue("Waboku in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Waboku" })
     }
+
+    @Test
+    fun testSwordsOfRevealingLightPersistenceAndAutoDestruction() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player activates Swords of Revealing Light from hand
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT))
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Swords of Revealing Light activated", activated)
+
+        // Swords should persist face-up in player's spell/trap zone
+        val swordsZone = testEngine.player.spellTrapZones.firstOrNull { it?.card?.name == "Swords of Revealing Light" }
+        assertNotNull("Swords persists on the field in spell/trap zone", swordsZone)
+        assertEquals("Swords is face-up spell/trap", CardPosition.FACE_UP_SPELL_TRAP, swordsZone?.position)
+        assertEquals("Opponent has 3 swords turns remaining", 3, testEngine.opponent.swordsTurnsRemaining)
+
+        // Pass player turn -> opponent turn starts
+        testEngine.passTurn(autoRunAi = false)
+        assertFalse(testEngine.isPlayerTurn)
+        // Pass opponent turn 1 -> ends opponent turn
+        testEngine.passTurn(autoRunAi = false)
+        assertTrue(testEngine.isPlayerTurn)
+        assertEquals("Opponent has 2 swords turns remaining", 2, testEngine.opponent.swordsTurnsRemaining)
+        assertNotNull("Swords still on field", testEngine.player.spellTrapZones.firstOrNull { it?.card?.name == "Swords of Revealing Light" })
+
+        // Pass player turn -> opponent turn starts
+        testEngine.passTurn(autoRunAi = false)
+        // Pass opponent turn 2 -> ends opponent turn
+        testEngine.passTurn(autoRunAi = false)
+        assertEquals("Opponent has 1 swords turn remaining", 1, testEngine.opponent.swordsTurnsRemaining)
+        assertNotNull("Swords still on field", testEngine.player.spellTrapZones.firstOrNull { it?.card?.name == "Swords of Revealing Light" })
+
+        // Pass player turn -> opponent turn starts
+        testEngine.passTurn(autoRunAi = false)
+        // Pass opponent turn 3 -> Swords expires and is destroyed
+        testEngine.passTurn(autoRunAi = false)
+        assertEquals("Opponent has 0 swords turns remaining", 0, testEngine.opponent.swordsTurnsRemaining)
+        assertNull("Swords removed from field after 3 turns", testEngine.player.spellTrapZones.firstOrNull { it?.card?.name == "Swords of Revealing Light" })
+        assertTrue("Swords placed in player's graveyard", testEngine.player.graveyard.any { it.name == "Swords of Revealing Light" })
+    }
+
+    @Test
+    fun testScapegoatSummonsSheepTokensAndBlocksTributes() {
+        val synthGba = com.yugioh.recomp.core.rom.RomValidator.createSyntheticGbaRom()
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            synthGba
+        )
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+        assertTrue("Running in GBA mode", testEngine.isGbaMode)
+
+        // Player activates Scapegoat
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = ToonAnimeArchetype.SCAPEGOAT))
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Scapegoat activated", activated)
+
+        // All 5 monster zones were empty, so zones should be filled with Sheep Tokens
+        val sheepTokens = testEngine.player.monsterZones.filterNotNull().filter { it.isToken }
+        assertEquals("Scapegoat summoned tokens", 5, sheepTokens.size)
+        assertTrue("Token has 0 ATK", sheepTokens.all { it.card.atk == 0 })
+        assertTrue("Token has 0 DEF", sheepTokens.all { it.card.def == 0 })
+        assertTrue("Token is in Defense position", sheepTokens.all { it.position == CardPosition.FACE_UP_DEFENSE })
+        assertFalse("Token cannot be tributed", sheepTokens.all { it.canBeTributed })
+
+        // Attempting to summon a tribute monster (Blue-Eyes White Dragon) should fail because sheep tokens cannot be tributed
+        val blueEyes = Card(id = 89631139, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
+        val (canSummon, reason) = testEngine.canSummon(isPlayer = true, card = blueEyes)
+        assertFalse("Cannot tribute sheep tokens for Tribute Summon", canSummon)
+        assertTrue("Reason cites tribute requirements", reason.contains("Tribute"))
+    }
+
+    @Test
+    fun testChainEnergyTaxDeducts500Lp() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.spellTrapZones[0] = DuelCard(card = ToonAnimeArchetype.CHAIN_ENERGY, position = CardPosition.FACE_UP_SPELL_TRAP)
+
+        val playerLpInitial = testEngine.player.lifePoints
+
+        // Player sets a Spell/Trap
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.RAIGEKI))
+        testEngine.setSpellTrap(isPlayer = true, handIndex = 0, slotIndex = 1)
+        assertEquals("Player paid 500 LP for setting a card under Chain Energy", playerLpInitial - 500, testEngine.player.lifePoints)
+
+        // Player summons a monster
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.ARMORED_LIZARD))
+        testEngine.summonMonster(isPlayer = true, handIndex = 0, slotIndex = 0, setDefense = false)
+        assertEquals("Player paid another 500 LP for normal summoning under Chain Energy", playerLpInitial - 1000, testEngine.player.lifePoints)
+    }
+
+    @Test
+    fun testTollTaxDeducts500LpOnAttackDeclaration() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.spellTrapZones[0] = DuelCard(card = ToonAnimeArchetype.TOLL, position = CardPosition.FACE_UP_SPELL_TRAP)
+        testEngine.player.monsterZones[0] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        while (testEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            testEngine.nextPhase()
+        }
+        val playerLpInitial = testEngine.player.lifePoints
+
+        // Direct attack declaration with Armored Lizard
+        val attacked = testEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue("Attack proceeded", attacked)
+        assertEquals("Player paid 500 LP Toll tax to declare attack", playerLpInitial - 500, testEngine.player.lifePoints)
+
+        // If player has less than 500 LP, cannot declare attack
+        testEngine.player.lifePoints = 400
+        testEngine.player.monsterZones[0]!!.resetTurnActions()
+        assertFalse("Cannot attack when LP < 500 with Toll active", testEngine.canMonsterAttack(isPlayer = true, slotIndex = 0))
+    }
+
+    @Test
+    fun testRingOfDestructionDestroysHighestAtkAndBurnsBothPlayers() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Put Ring of Destruction set in player's backrow
+        testEngine.player.spellTrapZones[0] = DuelCard(card = GbaCardCatalog.RING_OF_DESTRUCTION, position = CardPosition.SET_SPELL_TRAP)
+
+        // Put a 2400 ATK monster on opponent field
+        val jinzo = Card(id = 77585513, name = "Jinzo Dummy", atk = 2400, def = 1500, level = 6, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = jinzo, position = CardPosition.FACE_UP_ATTACK)
+
+        val playerLpBefore = testEngine.player.lifePoints
+        val oppLpBefore = testEngine.opponent.lifePoints
+
+        val activated = testEngine.activateSetTrap(isPlayer = true, slotIndex = 0)
+        assertTrue("Ring of Destruction activated", activated)
+        assertNull("Monster destroyed by Ring of Destruction", testEngine.opponent.monsterZones[0])
+        assertEquals("Player took 2400 burn damage", playerLpBefore - 2400, testEngine.player.lifePoints)
+        assertEquals("Opponent took 2400 burn damage", oppLpBefore - 2400, testEngine.opponent.lifePoints)
+        assertTrue("Monster sent to opponent GY", testEngine.opponent.graveyard.any { it.name == "Jinzo Dummy" })
+    }
+
+    @Test
+    fun testTorrentialTributeDestroysAllMonstersOnSummon() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent has Torrential Tribute set
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = GbaCardCatalog.TORRENTIAL_TRIBUTE, position = CardPosition.SET_SPELL_TRAP)
+
+        // Pre-existing monsters on both sides
+        testEngine.opponent.monsterZones[1] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+        testEngine.player.monsterZones[1] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        // Player summons a monster
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.ARMORED_LIZARD))
+        val summoned = testEngine.summonMonster(isPlayer = true, handIndex = 0, slotIndex = 0, setDefense = false)
+        assertTrue("Summon triggered Torrential Tribute", summoned)
+
+        // All monsters on field should be wiped out
+        assertTrue("Player monster zones empty", testEngine.player.monsterZones.all { it == null })
+        assertTrue("Opponent monster zones empty", testEngine.opponent.monsterZones.all { it == null })
+        assertTrue("Torrential Tribute in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Torrential Tribute" })
+    }
 }
 
