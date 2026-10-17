@@ -862,4 +862,71 @@ class DuelEngineTest {
         assertEquals("Fast speed multiplier should be 0.57", 0.57f, DuelSpeed.FAST.multiplier, 0.01f)
         assertEquals("Turbo speed multiplier should be 0.33", 0.33f, DuelSpeed.TURBO.multiplier, 0.01f)
     }
+
+    @Test
+    fun testFlipEffectManEaterBugDestroysAttackerInBattle() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player controls Vorse Raider in Attack position
+        val vorseRaider = Card(id = 10, name = "Vorse Raider", atk = 1900, def = 1200, level = 4, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.BEAST_WARRIOR)
+        testEngine.player.monsterZones[0] = DuelCard(card = vorseRaider, position = CardPosition.FACE_UP_ATTACK)
+
+        // Opponent controls Man-Eater Bug in face-down defense position
+        val manEaterBug = Card(id = 11, name = "Man-Eater Bug", atk = 450, def = 600, level = 2, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.INSECT)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = manEaterBug, position = CardPosition.FACE_DOWN_DEFENSE)
+
+        testEngine.nextPhase() // MAIN_PHASE_1 -> BATTLE_PHASE
+        assertTrue("Player declares attack on face-down monster", testEngine.declareAttack(0, 0))
+
+        // Man-Eater Bug should destroy Vorse Raider
+        assertNull("Vorse Raider should be destroyed by Man-Eater Bug flip effect", testEngine.player.monsterZones[0])
+        assertTrue("Vorse Raider should be in player graveyard", testEngine.player.graveyard.any { it.name == "Vorse Raider" })
+    }
+
+    @Test
+    fun testFieldSpellYamiStatModifiers() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val darkMagician = Card(id = 1, name = "Dark Magician", atk = 2500, def = 2100, level = 7, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.SPELLCASTER)
+        val kuriboh = Card(id = 2, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND)
+        val shiningFriendship = Card(id = 3, name = "Shining Friendship", atk = 1300, def = 1100, level = 4, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.FAIRY)
+
+        // Before field spell
+        assertEquals(2500, testEngine.getEffectiveAtk(darkMagician))
+        assertEquals(300, testEngine.getEffectiveAtk(kuriboh))
+        assertEquals(1300, testEngine.getEffectiveAtk(shiningFriendship))
+
+        // Activate Yami
+        val yami = Card(id = 99, name = "Yami", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL, monsterType = MonsterType.NONE)
+        testEngine.player.hand.add(DuelCard(card = yami))
+        testEngine.activateSpell(isPlayer = true, handIndex = testEngine.player.hand.size - 1)
+
+        assertEquals("Yami should be active field spell", "Yami", testEngine.activeFieldSpell?.name)
+        assertEquals("Dark Magician (Spellcaster) gains 200 ATK", 2700, testEngine.getEffectiveAtk(darkMagician))
+        assertEquals("Dark Magician (Spellcaster) gains 200 DEF", 2300, testEngine.getEffectiveDef(darkMagician))
+        assertEquals("Kuriboh (Fiend) gains 200 ATK", 500, testEngine.getEffectiveAtk(kuriboh))
+        assertEquals("Shining Friendship (Fairy) loses 200 ATK", 1100, testEngine.getEffectiveAtk(shiningFriendship))
+    }
+
+    @Test
+    fun testWhiteMagicalHatDiscardsCardOnDamage() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val hat = Card(id = 15, name = "White Magical Hat", atk = 1000, def = 700, level = 3, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.SPELLCASTER)
+        testEngine.player.monsterZones[0] = DuelCard(card = hat, position = CardPosition.FACE_UP_ATTACK)
+
+        // Opponent has empty field and 5 cards in hand
+        testEngine.opponent.monsterZones.fill(null)
+        val initialHandSize = testEngine.opponent.hand.size
+        assertTrue(initialHandSize > 0)
+
+        testEngine.nextPhase() // BATTLE_PHASE
+        assertTrue("Direct attack succeeds", testEngine.declareAttack(0, null))
+
+        assertEquals("Opponent hand size should decrease by 1 due to White Magical Hat effect", initialHandSize - 1, testEngine.opponent.hand.size)
+        assertTrue("Opponent graveyard should contain the discarded card", testEngine.opponent.graveyard.isNotEmpty())
+    }
 }

@@ -488,6 +488,7 @@ fun DuelScreen(
                 combatLogs = engine.combatLogs,
                 selectedAttacker = selectedAttacker,
                 canDirectAttack = canDirectAttack,
+                activeFieldSpell = engine.activeFieldSpell,
                 onDismissClash = {
                     engine.dismissClash()
                     refresh()
@@ -571,6 +572,8 @@ fun DuelScreen(
             Column(modifier = Modifier.fillMaxWidth()) {
                 SelectedCardHudBar(
                     card = activeHudCard,
+                    effectiveAtk = activeHudCard?.let { engine.getEffectiveAtk(it) } ?: 0,
+                    effectiveDef = activeHudCard?.let { engine.getEffectiveDef(it) } ?: 0,
                     onInspect = { activeHudCard?.let { inspectingCard = it } }
                 )
 
@@ -1092,6 +1095,7 @@ private fun MiddleAnimationStage(
     combatLogs: List<String>,
     selectedAttacker: Card?,
     canDirectAttack: Boolean,
+    activeFieldSpell: Card? = null,
     onDismissClash: () -> Unit,
     onDirectAttack: () -> Unit
 ) {
@@ -1154,6 +1158,23 @@ private fun MiddleAnimationStage(
                             )
                         }
                     }
+                }
+            }
+
+            if (activeFieldSpell != null) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Surface(
+                    color = Color(0xFF1E1B4B),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.border(1.dp, Color(0xFF818CF8), RoundedCornerShape(4.dp))
+                ) {
+                    Text(
+                        text = "🌌 FIELD: ${activeFieldSpell.name.uppercase()}",
+                        color = Color(0xFFA5B4FC),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.5.dp)
+                    )
                 }
             }
 
@@ -1498,6 +1519,8 @@ private fun PlayerSection(
 @Composable
 private fun SelectedCardHudBar(
     card: Card?,
+    effectiveAtk: Int = card?.atk ?: 0,
+    effectiveDef: Int = card?.def ?: 0,
     onInspect: () -> Unit
 ) {
     Surface(
@@ -1590,16 +1613,24 @@ private fun SelectedCardHudBar(
                                 color = Color(0xFF94A3B8),
                                 fontSize = 9.sp
                             )
+                            val isAtkBoosted = effectiveAtk > card.atk
+                            val isAtkReduced = effectiveAtk < card.atk
+                            val atkColor = if (isAtkBoosted) Color(0xFF4ADE80) else if (isAtkReduced) Color(0xFFF87171) else AttackRed
+                            val atkText = if (isAtkBoosted) "ATK $effectiveAtk (+${effectiveAtk - card.atk})" else if (isAtkReduced) "ATK $effectiveAtk (-${card.atk - effectiveAtk})" else "ATK ${card.atk}"
                             Text(
-                                text = "ATK ${card.atk}",
-                                color = AttackRed,
+                                text = atkText,
+                                color = atkColor,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontFamily = FontFamily.Monospace
                             )
+                            val isDefBoosted = effectiveDef > card.def
+                            val isDefReduced = effectiveDef < card.def
+                            val defColor = if (isDefBoosted) Color(0xFF4ADE80) else if (isDefReduced) Color(0xFFF87171) else DefenseBlue
+                            val defText = if (isDefBoosted) "DEF $effectiveDef (+${effectiveDef - card.def})" else if (isDefReduced) "DEF $effectiveDef (-${card.def - effectiveDef})" else "DEF ${card.def}"
                             Text(
-                                text = "DEF ${card.def}",
-                                color = DefenseBlue,
+                                text = defText,
+                                color = defColor,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontFamily = FontFamily.Monospace

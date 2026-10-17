@@ -31,6 +31,8 @@ class DuelEngine {
     var winner: String? = null
         private set
 
+    var activeFieldSpell: Card? = null
+
     var clashState: ClashState? = null
 
     var lastRewardCard: Card? = null
@@ -106,6 +108,7 @@ class DuelEngine {
         turnNumber = 1
         isPlayerTurn = true
         hasNormalSummonedThisTurn = false
+        activeFieldSpell = null
         winner = null
         clashState = null
         lastRewardCard = null
@@ -313,38 +316,168 @@ class DuelEngine {
         if (oldPos == CardPosition.FACE_DOWN_DEFENSE) {
             val opponentDuelist = if (isPlayer) opponent else player
             checkTrapHole(opponentDuelist, duelist, slotIndex)
+            triggerFlipEffect(duelist, opponentDuelist, duelCard.card, slotIndex, null)
+        }
+        return true
+    }
 
-            when (duelCard.card.name) {
-                "Man-Eater Bug" -> {
-                    val oppTarget = (0 until 5).firstOrNull { opponentDuelist.monsterZones[it] != null }
-                    if (oppTarget != null) {
-                        val destroyedMon = opponentDuelist.monsterZones[oppTarget]!!
-                        opponentDuelist.graveyard.add(destroyedMon.card)
-                        opponentDuelist.monsterZones[oppTarget] = null
-                        log("⚡ FLIP EFFECT: [Man-Eater Bug] destroyed [${destroyedMon.card.name}] in Zone ${oppTarget + 1}!")
-                    }
-                }
-                "Needle Worm" -> {
-                    val count = minOf(5, opponentDuelist.deck.size)
-                    log("⚡ FLIP EFFECT: [Needle Worm]! ${opponentDuelist.name} discards top 5 cards from Deck!")
-                    for (i in 0 until count) {
-                        opponentDuelist.graveyard.add(opponentDuelist.deck.removeAt(0))
-                    }
-                }
-                "Morphing Jar" -> {
-                    log("⚡ FLIP EFFECT: [Morphing Jar] activated! Both players discard hands and draw 5 cards!")
-                    player.graveyard.addAll(player.hand.map { it.card })
-                    player.hand.clear()
-                    opponent.graveyard.addAll(opponent.hand.map { it.card })
-                    opponent.hand.clear()
-                    for (i in 0 until 5) {
-                        if (player.deck.isNotEmpty()) drawCard(isPlayer = true)
-                        if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false)
+    fun getFieldSpellModifier(field: Card?, monster: Card): Int {
+        if (field == null || !monster.isMonster) return 0
+        return when (field.name) {
+            "Yami" -> when (monster.monsterType) {
+                MonsterType.SPELLCASTER, MonsterType.FIEND -> 200
+                MonsterType.FAIRY -> -200
+                else -> 0
+            }
+            "Forest" -> when (monster.monsterType) {
+                MonsterType.INSECT, MonsterType.BEAST, MonsterType.PLANT, MonsterType.BEAST_WARRIOR -> 200
+                else -> 0
+            }
+            "Sogen" -> when (monster.monsterType) {
+                MonsterType.WARRIOR, MonsterType.BEAST_WARRIOR -> 200
+                else -> 0
+            }
+            "Mountain" -> when (monster.monsterType) {
+                MonsterType.DRAGON, MonsterType.WINGED_BEAST, MonsterType.THUNDER -> 200
+                else -> 0
+            }
+            "Umi" -> when (monster.monsterType) {
+                MonsterType.FISH, MonsterType.SEA_SERPENT, MonsterType.THUNDER, MonsterType.AQUA -> 200
+                MonsterType.MACHINE, MonsterType.PYRO -> -200
+                else -> 0
+            }
+            "Wasteland" -> when (monster.monsterType) {
+                MonsterType.DINOSAUR, MonsterType.ZOMBIE, MonsterType.ROCK -> 200
+                else -> 0
+            }
+            else -> 0
+        }
+    }
+
+    fun getEffectiveAtk(card: Card): Int =
+        (card.atk + getFieldSpellModifier(activeFieldSpell, card)).coerceAtLeast(0)
+
+    fun getEffectiveDef(card: Card): Int =
+        (card.def + getFieldSpellModifier(activeFieldSpell, card)).coerceAtLeast(0)
+
+    fun triggerFlipEffect(
+        flipOwner: Duelist,
+        oppDuelist: Duelist,
+        flippedCard: Card,
+        flippedSlot: Int,
+        attackingSlot: Int? = null
+    ) {
+        when (flippedCard.name) {
+            "Man-Eater Bug" -> {
+                if (attackingSlot != null && oppDuelist.monsterZones[attackingSlot] != null) {
+                    val attacker = oppDuelist.monsterZones[attackingSlot]!!
+                    oppDuelist.monsterZones[attackingSlot] = null
+                    oppDuelist.graveyard.add(attacker.card)
+                    log("⚡ FLIP EFFECT: [Man-Eater Bug] destroyed the attacking monster [${attacker.card.name}]!")
+                } else {
+                    val target = (0 until 5).firstOrNull { oppDuelist.monsterZones[it] != null }
+                    if (target != null) {
+                        val victim = oppDuelist.monsterZones[target]!!
+                        oppDuelist.monsterZones[target] = null
+                        oppDuelist.graveyard.add(victim.card)
+                        log("⚡ FLIP EFFECT: [Man-Eater Bug] destroyed [${victim.card.name}] in Zone ${target + 1}!")
                     }
                 }
             }
+            "Cyber Jar" -> {
+                log("⚡ FLIP EFFECT: [Cyber Jar] triggered! All monsters on the field are destroyed!")
+                var count = 0
+                for (i in 0 until 5) {
+                    player.monsterZones[i]?.let {
+                        player.graveyard.add(it.card)
+                        player.monsterZones[i] = null
+                        count++
+                    }
+                    opponent.monsterZones[i]?.let {
+                        opponent.graveyard.add(it.card)
+                        opponent.monsterZones[i] = null
+                        count++
+                    }
+                }
+                log("Cyber Jar destroyed $count monster(s) on the field!")
+                repeat(2) {
+                    if (player.deck.isNotEmpty()) drawCard(isPlayer = true, ignoreHandLimit = true)
+                    if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false, ignoreHandLimit = true)
+                }
+            }
+            "Morphing Jar" -> {
+                log("⚡ FLIP EFFECT: [Morphing Jar]! Both players discard hands and draw 5 cards!")
+                player.graveyard.addAll(player.hand.map { it.card })
+                player.hand.clear()
+                opponent.graveyard.addAll(opponent.hand.map { it.card })
+                opponent.hand.clear()
+                for (i in 0 until 5) {
+                    if (player.deck.isNotEmpty()) drawCard(isPlayer = true, ignoreHandLimit = true)
+                    if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false, ignoreHandLimit = true)
+                }
+            }
+            "Hane-Hane" -> {
+                if (attackingSlot != null && oppDuelist.monsterZones[attackingSlot] != null) {
+                    val attacker = oppDuelist.monsterZones[attackingSlot]!!
+                    oppDuelist.monsterZones[attackingSlot] = null
+                    oppDuelist.hand.add(DuelCard(card = attacker.card))
+                    log("⚡ FLIP EFFECT: [Hane-Hane] returned attacking [${attacker.card.name}] to ${oppDuelist.name}'s hand!")
+                } else {
+                    val target = (0 until 5).firstOrNull { oppDuelist.monsterZones[it] != null }
+                    if (target != null) {
+                        val returned = oppDuelist.monsterZones[target]!!
+                        oppDuelist.monsterZones[target] = null
+                        oppDuelist.hand.add(DuelCard(card = returned.card))
+                        log("⚡ FLIP EFFECT: [Hane-Hane] returned [${returned.card.name}] to ${oppDuelist.name}'s hand!")
+                    }
+                }
+            }
+            "Penguin Soldier" -> {
+                log("⚡ FLIP EFFECT: [Penguin Soldier] activated!")
+                var returnedCount = 0
+                for (i in 0 until 5) {
+                    val oppMon = oppDuelist.monsterZones[i]
+                    if (oppMon != null && returnedCount < 2) {
+                        oppDuelist.monsterZones[i] = null
+                        oppDuelist.hand.add(DuelCard(card = oppMon.card))
+                        returnedCount++
+                        log("Penguin Soldier returned [${oppMon.card.name}] to ${oppDuelist.name}'s hand!")
+                    }
+                }
+            }
+            "Needle Worm" -> {
+                val count = minOf(5, oppDuelist.deck.size)
+                log("⚡ FLIP EFFECT: [Needle Worm]! ${oppDuelist.name} discards top 5 cards from Deck!")
+                for (i in 0 until count) {
+                    oppDuelist.graveyard.add(oppDuelist.deck.removeAt(0))
+                }
+            }
+            "Magician of Faith" -> {
+                val spellInGrave = flipOwner.graveyard.firstOrNull { it.isSpell }
+                if (spellInGrave != null) {
+                    flipOwner.graveyard.remove(spellInGrave)
+                    flipOwner.hand.add(DuelCard(card = spellInGrave))
+                    log("⚡ FLIP EFFECT: [Magician of Faith] returned [${spellInGrave.name}] from Graveyard to ${flipOwner.name}'s hand!")
+                }
+            }
+            "Mask of Darkness" -> {
+                val trapInGrave = flipOwner.graveyard.firstOrNull { it.isTrap }
+                if (trapInGrave != null) {
+                    flipOwner.graveyard.remove(trapInGrave)
+                    flipOwner.hand.add(DuelCard(card = trapInGrave))
+                    log("⚡ FLIP EFFECT: [Mask of Darkness] returned [${trapInGrave.name}] from Graveyard to ${flipOwner.name}'s hand!")
+                }
+            }
+            "Trap Master" -> {
+                val targetTrap = (0 until 5).firstOrNull { oppDuelist.spellTrapZones[it] != null }
+                if (targetTrap != null) {
+                    val destroyedTrap = oppDuelist.spellTrapZones[targetTrap]!!
+                    oppDuelist.spellTrapZones[targetTrap] = null
+                    oppDuelist.graveyard.add(destroyedTrap.card)
+                    log("⚡ FLIP EFFECT: [Trap Master] destroyed [${destroyedTrap.card.name}] in Zone ${targetTrap + 1}!")
+                }
+            }
         }
-        return true
     }
 
     fun isJinzoActive(): Boolean {
@@ -530,10 +663,20 @@ class DuelEngine {
                 duelist.lifePoints += 200
                 log("${duelist.name} gained 200 LP from Mooyan Curry! (Total: ${duelist.lifePoints})")
             }
+            "Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland" -> {
+                val prevField = activeFieldSpell
+                if (prevField != null) {
+                    duelist.graveyard.add(prevField)
+                }
+                activeFieldSpell = card
+                log("🌌 FIELD SPELL: [${card.name}] is now active across the arena! Modifying monster stats.")
+            }
         }
 
         duelist.spellTrapZones[tempSlot] = null
-        duelist.graveyard.add(card)
+        if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland")) {
+            duelist.graveyard.add(card)
+        }
         return true
     }
 
@@ -674,8 +817,14 @@ class DuelEngine {
             }
 
             attackerMonster.markAttacked()
-            val damage = attackerMonster.card.atk
+            val damage = getEffectiveAtk(attackerMonster.card)
             defenderDuelist.lifePoints = (defenderDuelist.lifePoints - damage).coerceAtLeast(0)
+
+            if (attackerMonster.card.name == "White Magical Hat" && damage > 0 && defenderDuelist.hand.isNotEmpty()) {
+                val discarded = defenderDuelist.hand.removeAt(0)
+                defenderDuelist.graveyard.add(discarded.card)
+                log("⚡ EFFECT: [White Magical Hat] discarded [${discarded.card.name}] from ${defenderDuelist.name}'s hand!")
+            }
 
             clashState = ClashState(
                 attackerCard = attackerMonster.card,
@@ -695,14 +844,14 @@ class DuelEngine {
         val targetMonster = defenderDuelist.monsterZones[targetSlot] ?: return false
 
         attackerMonster.markAttacked()
-        val aAtk = attackerMonster.card.atk
+        val aAtk = getEffectiveAtk(attackerMonster.card)
         val dCard = targetMonster.card
 
         // Yu-Gi-Oh! Official Rule: When a face-down monster is attacked, it is flipped face-up in the Damage Step before damage calculation
         val wasFaceDown = targetMonster.position == CardPosition.FACE_DOWN_DEFENSE
         if (wasFaceDown) {
             targetMonster.position = CardPosition.FACE_UP_DEFENSE
-            log("${defenderDuelist.name}'s face-down monster was flipped face-up: [${dCard.name}] (${dCard.def} DEF)!")
+            log("${defenderDuelist.name}'s face-down monster was flipped face-up: [${dCard.name}] (${getEffectiveDef(dCard)} DEF)!")
         }
 
         // Check Dark Duel Stories Elemental Alignment Dominance (GBC DDS Only)
@@ -742,12 +891,18 @@ class DuelEngine {
 
         // Standard Battle Calculation (Official GBA TCG Expert Rules)
         if (targetMonster.position == CardPosition.FACE_UP_ATTACK) {
-            val dAtk = dCard.atk
+            val dAtk = getEffectiveAtk(dCard)
             if (aAtk > dAtk) {
                 val diff = aAtk - dAtk
                 defenderDuelist.lifePoints = (defenderDuelist.lifePoints - diff).coerceAtLeast(0)
                 defenderDuelist.graveyard.add(dCard)
                 defenderDuelist.monsterZones[targetSlot] = null
+
+                if (attackerMonster.card.name == "White Magical Hat" && diff > 0 && defenderDuelist.hand.isNotEmpty()) {
+                    val discarded = defenderDuelist.hand.removeAt(0)
+                    defenderDuelist.graveyard.add(discarded.card)
+                    log("⚡ EFFECT: [White Magical Hat] discarded [${discarded.card.name}] from ${defenderDuelist.name}'s hand!")
+                }
 
                 clashState = ClashState(
                     attackerCard = attackerMonster.card,
@@ -791,7 +946,7 @@ class DuelEngine {
             }
         } else {
             // Defender in Defense Position (flipped to FACE_UP_DEFENSE if wasFaceDown)
-            val dDef = dCard.def
+            val dDef = getEffectiveDef(dCard)
             val flipPrefix = if (wasFaceDown) "Flipped face-up! " else ""
             if (aAtk > dDef) {
                 defenderDuelist.graveyard.add(dCard)
@@ -836,33 +991,7 @@ class DuelEngine {
 
         // Trigger Flip Effects if the attacked monster was flipped face-up
         if (wasFaceDown) {
-            when (dCard.name) {
-                "Man-Eater Bug" -> {
-                    log("⚡ FLIP EFFECT: [Man-Eater Bug] activates! Attacking monster [${attackerMonster.card.name}] is destroyed!")
-                    if (attackerDuelist.monsterZones[attackerSlot] != null) {
-                        attackerDuelist.graveyard.add(attackerMonster.card)
-                        attackerDuelist.monsterZones[attackerSlot] = null
-                    }
-                }
-                "Needle Worm" -> {
-                    log("⚡ FLIP EFFECT: [Needle Worm] activates! ${attackerDuelist.name} discards top 5 cards from Deck!")
-                    val discards = minOf(5, attackerDuelist.deck.size)
-                    for (i in 0 until discards) {
-                        attackerDuelist.graveyard.add(attackerDuelist.deck.removeAt(0))
-                    }
-                }
-                "Morphing Jar" -> {
-                    log("⚡ FLIP EFFECT: [Morphing Jar] activates! Both players discard hands and draw 5 cards!")
-                    player.graveyard.addAll(player.hand.map { it.card })
-                    player.hand.clear()
-                    opponent.graveyard.addAll(opponent.hand.map { it.card })
-                    opponent.hand.clear()
-                    for (i in 0 until 5) {
-                        if (player.deck.isNotEmpty()) drawCard(isPlayer = true)
-                        if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false)
-                    }
-                }
-            }
+            triggerFlipEffect(defenderDuelist, attackerDuelist, dCard, targetSlot, attackerSlot)
         }
 
         checkWinConditions()
