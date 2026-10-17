@@ -14,6 +14,7 @@ import com.yugioh.recomp.core.engine.GbaCampaignManager
 import com.yugioh.recomp.ui.CampaignHubScreen
 import com.yugioh.recomp.ui.DeckConstructionScreen
 import com.yugioh.recomp.ui.DuelScreen
+import com.yugioh.recomp.ui.PasswordMachineScreen
 import com.yugioh.recomp.ui.RomImportScreen
 import com.yugioh.recomp.ui.theme.DarkFieldBackground
 import com.yugioh.recomp.ui.theme.YuGiOhRecompTheme
@@ -22,6 +23,7 @@ enum class AppScreen {
     ROM_IMPORT,
     CAMPAIGN_HUB,
     DECK_BUILDER,
+    PASSWORD_MACHINE,
     DUEL_ARENA
 }
 
@@ -69,6 +71,9 @@ class MainActivity : ComponentActivity() {
                                     onOpenDeckBuilder = {
                                         currentScreen = AppScreen.DECK_BUILDER
                                     },
+                                    onOpenPasswordTerminal = {
+                                        currentScreen = AppScreen.PASSWORD_MACHINE
+                                    },
                                     onReturnToRomImporter = {
                                         currentScreen = AppScreen.ROM_IMPORT
                                     }
@@ -76,6 +81,13 @@ class MainActivity : ComponentActivity() {
                             }
                             AppScreen.DECK_BUILDER -> {
                                 DeckConstructionScreen(
+                                    onNavigateBack = {
+                                        currentScreen = AppScreen.CAMPAIGN_HUB
+                                    }
+                                )
+                            }
+                            AppScreen.PASSWORD_MACHINE -> {
+                                PasswordMachineScreen(
                                     onNavigateBack = {
                                         currentScreen = AppScreen.CAMPAIGN_HUB
                                     }

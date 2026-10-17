@@ -48,6 +48,11 @@ object GbaCampaignManager {
     var selectedOpponentName: String = "Tristan Taylor"
 
     /**
+     * Starchips currency for unlocking cards via the Password Terminal.
+     */
+    var starchips: Int = 50
+
+    /**
      * Authentic 5-Tier Battle City Tournament Opponents from The Eternal Duelist Soul.
      */
     val opponents = listOf(
@@ -860,6 +865,7 @@ object GbaCampaignManager {
     fun recordDuelResult(opponentName: String, won: Boolean): Card? {
         if (won) {
             opponentWins[opponentName] = (opponentWins[opponentName] ?: 0) + 1
+            starchips = (starchips + 5).coerceAtMost(9999)
             val drop = when (opponentName) {
                 "Tristan Taylor" -> GbaCardCatalog.BATTLE_OX_GBA
                 "Tea Gardner" -> GbaCardCatalog.SHINING_FRIENDSHIP
@@ -880,6 +886,27 @@ object GbaCampaignManager {
             return drop
         }
         return null
+    }
+
+    /**
+     * Unlocks a card into Trunk using 8-digit official Konami passcode and Starchips.
+     */
+    fun unlockCardViaPasscode(code: String): Pair<Boolean, String> {
+        val cleanCode = code.trim().padStart(8, '0')
+        val cardName = CardPasscodeRegistry.findCardNameByPasscode(cleanCode)
+            ?: return Pair(false, "Invalid passcode: No card found for [$cleanCode].")
+
+        val card = GbaCardCatalog.getCardByName(cardName)
+            ?: DdsCardCatalog.getCardByName(cardName)
+            ?: Card(id = 9000 + trunk.size, name = cardName, atk = 1600, def = 1400, level = 4, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR)
+
+        val cost = (card.level * 5).coerceIn(5, 40)
+        if (starchips < cost) {
+            return Pair(false, "Requires $cost Starchips! You currently have $starchips ⭐.")
+        }
+        starchips -= cost
+        trunk.add(card)
+        return Pair(true, "Successfully unlocked [${card.name}] into Trunk for $cost Starchips! (Remaining: $starchips ⭐)")
     }
 
     fun addCardToDeck(card: Card): Boolean {

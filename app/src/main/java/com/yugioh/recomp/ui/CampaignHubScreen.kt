@@ -41,6 +41,7 @@ data class OpponentProfile(
 fun CampaignHubScreen(
     onStartDuel: (String) -> Unit,
     onOpenDeckBuilder: () -> Unit,
+    onOpenPasswordTerminal: () -> Unit,
     onReturnToRomImporter: () -> Unit
 ) {
     val isGba = RomAssetCache.activeTarget?.platform == RomPlatform.GBA
@@ -278,10 +279,10 @@ fun CampaignHubScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Action Quick Buttons: Deck Construction & Change ROM
+            // Action Quick Buttons: Deck Construction, Passwords & Change ROM
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Button(
                     onClick = onOpenDeckBuilder,
@@ -291,9 +292,23 @@ fun CampaignHubScreen(
                         .weight(1f)
                         .border(1.dp, Color(0xFF475569), RoundedCornerShape(8.dp))
                 ) {
-                    Icon(Icons.Default.Build, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isGba) "GBA Deck Construction" else "Deck Construction", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Build, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Deck Builder", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                }
+
+                val currentStarchips = if (isGba) GbaCampaignManager.starchips else DdsCampaignManager.starchips
+                Button(
+                    onClick = onOpenPasswordTerminal,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1.15f)
+                        .border(1.dp, MillenniumGold, RoundedCornerShape(8.dp))
+                ) {
+                    Icon(Icons.Default.Star, contentDescription = null, tint = MillenniumGold, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Passwords (⭐$currentStarchips)", color = MillenniumGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(
