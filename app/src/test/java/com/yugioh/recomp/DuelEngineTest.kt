@@ -830,4 +830,36 @@ class DuelEngineTest {
             assertFalse("$duelist must not have Gemini Elf", deck.any { it.name == "Gemini Elf" })
         }
     }
+
+    @Test
+    fun testOpponentSetTrapAndDefenseMonsterAreFacedown() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+        testEngine.passTurn(autoRunAi = false)
+        testEngine.executeAiStep(AiTurnStep.PhaseTransition(DuelPhase.MAIN_PHASE_1, "Main Phase 1"))
+
+        val trapCard = Card(id = 99, name = "Mirror Force", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.opponent.hand.add(DuelCard(card = trapCard))
+        testEngine.executeAiStep(AiTurnStep.SetTrap(trapCard, 0, "Joey sets a card"))
+
+        val setTrap = testEngine.opponent.spellTrapZones[0]
+        assertNotNull("Opponent trap should be on the field", setTrap)
+        assertTrue("Opponent set trap position must be isFaceDown", setTrap!!.position.isFaceDown)
+
+        val monsterCard = Card(id = 100, name = "Man-Eater Bug", atk = 450, def = 600, level = 2, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.INSECT)
+        testEngine.opponent.hand.add(DuelCard(card = monsterCard))
+        testEngine.executeAiStep(AiTurnStep.SummonMonster(monsterCard, 0, isDefense = true, announcement = "Joey sets a monster"))
+
+        val setMonster = testEngine.opponent.monsterZones[0]
+        assertNotNull("Opponent set monster should be on the field", setMonster)
+        assertTrue("Opponent set defense monster must be isFaceDown", setMonster!!.position.isFaceDown)
+    }
+
+    @Test
+    fun testDuelSpeedSettingsHierarchy() {
+        assertEquals("Slow speed multiplier should be 1.5", 1.5f, DuelSpeed.SLOW.multiplier, 0.01f)
+        assertEquals("Normal speed multiplier should be 1.0", 1.0f, DuelSpeed.NORMAL.multiplier, 0.01f)
+        assertEquals("Fast speed multiplier should be 0.57", 0.57f, DuelSpeed.FAST.multiplier, 0.01f)
+        assertEquals("Turbo speed multiplier should be 0.33", 0.33f, DuelSpeed.TURBO.multiplier, 0.01f)
+    }
 }

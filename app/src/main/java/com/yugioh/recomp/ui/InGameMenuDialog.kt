@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.yugioh.recomp.core.engine.DuelPhase
+import com.yugioh.recomp.core.engine.DuelSpeed
 import com.yugioh.recomp.ui.theme.AttackRed
 import com.yugioh.recomp.ui.theme.LifePointGreen
 import com.yugioh.recomp.ui.theme.MillenniumGold
@@ -45,8 +46,8 @@ fun InGameMenuDialog(
     onToggleSfx: () -> Unit,
     isShaderEnabled: Boolean,
     onToggleShader: () -> Unit,
-    isFastAiEnabled: Boolean,
-    onToggleFastAi: () -> Unit,
+    currentSpeed: DuelSpeed,
+    onSelectSpeed: (DuelSpeed) -> Unit,
     onResume: () -> Unit,
     onRestart: () -> Unit,
     onSurrender: () -> Unit,
@@ -398,31 +399,60 @@ fun InGameMenuDialog(
                                     }
                                 }
 
-                                // Fast AI Battle Speed Toggle
+                                // AI Battle Speed Selector
                                 Surface(
                                     color = Color(0xFF131A2B),
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onToggleFastAi() }
                                         .border(1.dp, Color(0xFF26324D), RoundedCornerShape(8.dp))
                                         .padding(10.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column {
-                                            Text("AI Battle Speed", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            Text("Speed up opponent turn animations", color = Color(0xFF94A3B8), fontSize = 9.5.sp)
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text("AI Move Display Speed", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text("Controls opponent announcement & action duration", color = Color(0xFF94A3B8), fontSize = 9.5.sp)
+                                            }
+                                            Text(
+                                                text = currentSpeed.shortLabel,
+                                                color = Color(0xFF38BDF8),
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 12.sp
+                                            )
                                         }
-                                        Text(
-                                            text = if (isFastAiEnabled) "⚡ 2x FAST" else "⏳ 1x NORMAL",
-                                            color = if (isFastAiEnabled) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
-                                            fontWeight = FontWeight.Black,
-                                            fontSize = 12.sp
-                                        )
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            DuelSpeed.entries.forEach { speed ->
+                                                val isSelected = speed == currentSpeed
+                                                Surface(
+                                                    color = if (isSelected) Color(0xFF2563EB) else Color(0xFF1E283D),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable { onSelectSpeed(speed) }
+                                                        .border(1.dp, if (isSelected) Color.White else Color(0xFF334155), RoundedCornerShape(6.dp))
+                                                ) {
+                                                    Text(
+                                                        text = speed.shortLabel,
+                                                        color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        textAlign = TextAlign.Center,
+                                                        modifier = Modifier.padding(vertical = 6.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
