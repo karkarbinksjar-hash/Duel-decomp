@@ -153,6 +153,7 @@ object CardPasscodeRegistry {
         "54844990" to "Skull Stalker",
         "29802344" to "Snakeyashi",
         "45986603" to "Snatch Steal",
+        "41420027" to "Solemn Judgment",
         "38942059" to "Sonic Maid",
         "76103675" to "Sparks",
         "08201910" to "Star Boy",

@@ -39,6 +39,9 @@ class DuelEngine {
 
     var lastActivatedSpell: Pair<String, String>? = null
 
+    val activeChain: MutableList<ChainLink> = mutableListOf()
+    var lastChainSummary: String? = null
+
     private val tempControlledMonsters = mutableListOf<TempControlRecord>()
 
     data class TempControlRecord(
@@ -55,6 +58,53 @@ class DuelEngine {
 
     fun isToonWorldActive(duelist: Duelist): Boolean =
         duelist.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Toon World" }
+
+    fun checkKuribohHandTrap(victim: Duelist, incomingDamage: Int): Int {
+        if (incomingDamage <= 0) return 0
+        val kuribohIdx = victim.hand.indexOfFirst { it.card.name == "Kuriboh" }
+        if (kuribohIdx != -1) {
+            val kuriboh = victim.hand.removeAt(kuribohIdx)
+            victim.graveyard.add(kuriboh.card)
+            val link = ChainLink(
+                linkIndex = 1,
+                card = kuriboh.card,
+                isPlayer = (victim === player),
+                isNegated = false,
+                description = "Discarded from hand during Damage Step to reduce battle damage to 0"
+            )
+            activeChain.clear()
+            activeChain.add(link)
+            lastChainSummary = "🌰 HAND-TRAP: ${victim.name} discarded [Kuriboh]! Battle damage ($incomingDamage) reduced to 0!"
+            log(lastChainSummary!!)
+            return 0
+        }
+        return incomingDamage
+    }
+
+    fun checkSolemnSummonNegation(summonOwner: Duelist, oppDuelist: Duelist, summonedCard: Card): Boolean {
+        if (isJinzoActive()) return false
+        val solemnSlot = (0 until 5).firstOrNull { slot ->
+            val t = oppDuelist.spellTrapZones[slot]
+            t != null && t.position.isFaceDown && t.card.name == "Solemn Judgment"
+        }
+        if (solemnSlot != null && oppDuelist.lifePoints > 1) {
+            val cost = oppDuelist.lifePoints / 2
+            oppDuelist.lifePoints -= cost
+            val trapCard = oppDuelist.spellTrapZones[solemnSlot]!!.card
+            oppDuelist.spellTrapZones[solemnSlot] = null
+            oppDuelist.graveyard.add(trapCard)
+            summonOwner.graveyard.add(summonedCard)
+            activeChain.clear()
+            activeChain.add(ChainLink(1, summonedCard, isPlayer = (summonOwner === player), isNegated = true, "Summon Attempt"))
+            activeChain.add(ChainLink(2, trapCard, isPlayer = (oppDuelist === player), isNegated = false, "Counter-Trap Negation"))
+            lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated summon of [Chain Link 1: ${summonedCard.name}]!"
+            log("⚡ CHAIN LINK 1: ${summonOwner.name} attempted to summon [${summonedCard.name}]!")
+            log("⚡ CHAIN LINK 2: ${oppDuelist.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP: ${oppDuelist.lifePoints} LP remaining)!")
+            log("❌ CHAIN RESOLUTION: [Solemn Judgment] negated the summon and sent [${summonedCard.name}] to the Graveyard!")
+            return true
+        }
+        return false
+    }
 
     fun dismissClash() {
         clashState = null
@@ -274,6 +324,13 @@ class DuelEngine {
             }
             if (targetSlot == -1) return false
 
+            val opponentDuelist = if (isPlayer) opponent else player
+            if (!setDefense && checkSolemnSummonNegation(duelist, opponentDuelist, card)) {
+                duelist.hand.removeAt(handIndex)
+                hasNormalSummonedThisTurn = true
+                return true
+            }
+
             duelist.hand.removeAt(handIndex)
             val pos = if (setDefense) CardPosition.FACE_DOWN_DEFENSE else CardPosition.FACE_UP_ATTACK
             duelist.monsterZones[targetSlot] = DuelCard(card = card, position = pos, canChangePosition = false)
@@ -282,7 +339,6 @@ class DuelEngine {
             val actionDesc = if (tributesNeeded > 0) "Tribute Summoned" else if (setDefense) "Set" else "Normal Summoned"
             log("${duelist.name} $actionDesc [${card.name}] (ATK ${card.atk} / DEF ${card.def}) to Zone ${targetSlot + 1}.")
 
-            val opponentDuelist = if (isPlayer) opponent else player
             checkTrapHole(opponentDuelist, duelist, targetSlot)
 
             return true
@@ -313,13 +369,19 @@ class DuelEngine {
             }
         }
 
+        val opponentDuelist = if (isPlayer) opponent else player
+        if (!setDefense && checkSolemnSummonNegation(duelist, opponentDuelist, card)) {
+            duelist.hand.removeAt(handIndex)
+            hasNormalSummonedThisTurn = true
+            return true
+        }
+
         duelist.hand.removeAt(handIndex)
         val pos = if (setDefense) CardPosition.FACE_DOWN_DEFENSE else CardPosition.FACE_UP_ATTACK
         duelist.monsterZones[targetSlot] = DuelCard(card = card, position = pos, canChangePosition = false)
         hasNormalSummonedThisTurn = true
         log("${duelist.name} placed [${card.name}] in Zone ${targetSlot + 1}.")
 
-        val opponentDuelist = if (isPlayer) opponent else player
         checkTrapHole(opponentDuelist, duelist, targetSlot)
 
         return true
@@ -609,8 +671,45 @@ class DuelEngine {
             val trapCard = trapOwner.spellTrapZones[trapSlot]!!.card
             trapOwner.spellTrapZones[trapSlot] = null
             trapOwner.graveyard.add(trapCard)
+
+            // Summoning duelist counter-trap check: Seven Tools or Solemn Judgment
+            val counterSlot = (0 until 5).firstOrNull { slot ->
+                val t = summoningDuelist.spellTrapZones[slot]
+                t != null && t.position.isFaceDown && (t.card.name == "Seven Tools of the Bandit" || t.card.name == "Solemn Judgment")
+            }
+            if (counterSlot != null) {
+                val counterTrap = summoningDuelist.spellTrapZones[counterSlot]!!.card
+                if (counterTrap.name == "Seven Tools of the Bandit" && summoningDuelist.lifePoints > 1000) {
+                    summoningDuelist.lifePoints -= 1000
+                    summoningDuelist.spellTrapZones[counterSlot] = null
+                    summoningDuelist.graveyard.add(counterTrap)
+                    activeChain.clear()
+                    activeChain.add(ChainLink(1, trapCard, isPlayer = (trapOwner === player), isNegated = true, "Trap Hole Trigger"))
+                    activeChain.add(ChainLink(2, counterTrap, isPlayer = (summoningDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                    lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Seven Tools of the Bandit] negated [Chain Link 1: Trap Hole]!"
+                    log("⚡ CHAIN LINK 1: ${trapOwner.name} triggered Trap: [Trap Hole]!")
+                    log("⚡ CHAIN LINK 2: ${summoningDuelist.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
+                    log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [Trap Hole]!")
+                    return
+                } else if (counterTrap.name == "Solemn Judgment" && summoningDuelist.lifePoints > 1) {
+                    val cost = summoningDuelist.lifePoints / 2
+                    summoningDuelist.lifePoints -= cost
+                    summoningDuelist.spellTrapZones[counterSlot] = null
+                    summoningDuelist.graveyard.add(counterTrap)
+                    activeChain.clear()
+                    activeChain.add(ChainLink(1, trapCard, isPlayer = (trapOwner === player), isNegated = true, "Trap Hole Trigger"))
+                    activeChain.add(ChainLink(2, counterTrap, isPlayer = (summoningDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                    lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: Trap Hole]!"
+                    log("⚡ CHAIN LINK 1: ${trapOwner.name} triggered Trap: [Trap Hole]!")
+                    log("⚡ CHAIN LINK 2: ${summoningDuelist.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP)!")
+                    log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [Trap Hole]!")
+                    return
+                }
+            }
+
             summoningDuelist.monsterZones[summonedSlot] = null
             summoningDuelist.graveyard.add(summonedMonster.card)
+            triggerGraveyardSearcher(summonedMonster.card, summoningDuelist)
             lastTriggeredTrap = Pair("Trap Hole", summonedSlot)
             log("TRAP TRIGGER: ${trapOwner.name} activated [Trap Hole]! [${summonedMonster.card.name}] was destroyed!")
         }
@@ -654,18 +753,27 @@ class DuelEngine {
                 opp.graveyard.add(counterTrap)
                 duelist.hand.removeAt(handIndex)
                 duelist.graveyard.add(card)
+                activeChain.clear()
+                activeChain.add(ChainLink(1, card, isPlayer = (duelist === player), isNegated = true, "Spell Activation"))
+                activeChain.add(ChainLink(2, counterTrap, isPlayer = (opp === player), isNegated = false, "Counter-Trap Negation"))
+                lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Magic Jammer] negated [Chain Link 1: ${card.name}]!"
                 log("⚡ CHAIN LINK 1: ${duelist.name} activates Spell: [${card.name}]")
                 log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Magic Jammer] (Discarded [${discard.card.name}])!")
                 log("❌ CHAIN RESOLUTION: [Magic Jammer] negates and destroys [${card.name}]!")
                 return true
             } else if (counterTrap.name == "Solemn Judgment" && opp.lifePoints > 1) {
-                opp.lifePoints /= 2
+                val cost = opp.lifePoints / 2
+                opp.lifePoints -= cost
                 opp.spellTrapZones[counterSlot] = null
                 opp.graveyard.add(counterTrap)
                 duelist.hand.removeAt(handIndex)
                 duelist.graveyard.add(card)
+                activeChain.clear()
+                activeChain.add(ChainLink(1, card, isPlayer = (duelist === player), isNegated = true, "Spell Activation"))
+                activeChain.add(ChainLink(2, counterTrap, isPlayer = (opp === player), isNegated = false, "Counter-Trap Negation"))
+                lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: ${card.name}]!"
                 log("⚡ CHAIN LINK 1: ${duelist.name} activates Spell: [${card.name}]")
-                log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Solemn Judgment] (Paid half LP: ${opp.lifePoints})!")
+                log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP: ${opp.lifePoints} LP remaining)!")
                 log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [${card.name}]!")
                 return true
             }
@@ -731,18 +839,27 @@ class DuelEngine {
                 other.graveyard.add(counterTrap)
                 duelist.spellTrapZones[slotIndex] = null
                 duelist.graveyard.add(card)
+                activeChain.clear()
+                activeChain.add(ChainLink(1, card, isPlayer = (duelist === player), isNegated = true, "Set Spell Activation"))
+                activeChain.add(ChainLink(2, counterTrap, isPlayer = (other === player), isNegated = false, "Counter-Trap Negation"))
+                lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Magic Jammer] negated [Chain Link 1: ${card.name}]!"
                 log("⚡ CHAIN LINK 1: ${duelist.name} activates Set Spell: [${card.name}]")
                 log("⚡ CHAIN LINK 2: ${other.name} chains Counter-Trap: [Magic Jammer]!")
                 log("❌ CHAIN RESOLUTION: [Magic Jammer] negates and destroys [${card.name}]!")
                 return true
             } else if (counterTrap.name == "Solemn Judgment" && other.lifePoints > 1) {
-                other.lifePoints /= 2
+                val cost = other.lifePoints / 2
+                other.lifePoints -= cost
                 other.spellTrapZones[counterSlot] = null
                 other.graveyard.add(counterTrap)
                 duelist.spellTrapZones[slotIndex] = null
                 duelist.graveyard.add(card)
+                activeChain.clear()
+                activeChain.add(ChainLink(1, card, isPlayer = (duelist === player), isNegated = true, "Set Spell Activation"))
+                activeChain.add(ChainLink(2, counterTrap, isPlayer = (other === player), isNegated = false, "Counter-Trap Negation"))
+                lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: ${card.name}]!"
                 log("⚡ CHAIN LINK 1: ${duelist.name} activates Set Spell: [${card.name}]")
-                log("⚡ CHAIN LINK 2: ${other.name} chains Counter-Trap: [Solemn Judgment]!")
+                log("⚡ CHAIN LINK 2: ${other.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP)!")
                 log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [${card.name}]!")
                 return true
             }
@@ -1118,6 +1235,42 @@ class DuelEngine {
         duelist.graveyard.add(trapCard)
         log("${duelist.name} activated Trap: [${trapCard.name}]!")
 
+        // Counter-Trap check against Trap activation: Seven Tools of the Bandit or Solemn Judgment
+        val counterSlot = (0 until 5).firstOrNull { slot ->
+            val t = opp.spellTrapZones[slot]
+            t != null && t.position.isFaceDown && (t.card.name == "Seven Tools of the Bandit" || t.card.name == "Solemn Judgment")
+        }
+
+        if (counterSlot != null && !isJinzoActive()) {
+            val counterTrap = opp.spellTrapZones[counterSlot]!!.card
+            if (counterTrap.name == "Seven Tools of the Bandit" && opp.lifePoints > 1000) {
+                opp.lifePoints -= 1000
+                opp.spellTrapZones[counterSlot] = null
+                opp.graveyard.add(counterTrap)
+                activeChain.clear()
+                activeChain.add(ChainLink(1, trapCard, isPlayer = (duelist === player), isNegated = true, "Trap Activation"))
+                activeChain.add(ChainLink(2, counterTrap, isPlayer = (opp === player), isNegated = false, "Counter-Trap Negation"))
+                lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Seven Tools of the Bandit] negated [Chain Link 1: ${trapCard.name}]!"
+                log("⚡ CHAIN LINK 1: ${duelist.name} activates Trap: [${trapCard.name}]")
+                log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
+                log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [${trapCard.name}]!")
+                return true
+            } else if (counterTrap.name == "Solemn Judgment" && opp.lifePoints > 1) {
+                val cost = opp.lifePoints / 2
+                opp.lifePoints -= cost
+                opp.spellTrapZones[counterSlot] = null
+                opp.graveyard.add(counterTrap)
+                activeChain.clear()
+                activeChain.add(ChainLink(1, trapCard, isPlayer = (duelist === player), isNegated = true, "Trap Activation"))
+                activeChain.add(ChainLink(2, counterTrap, isPlayer = (opp === player), isNegated = false, "Counter-Trap Negation"))
+                lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: ${trapCard.name}]!"
+                log("⚡ CHAIN LINK 1: ${duelist.name} activates Trap: [${trapCard.name}]")
+                log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP: ${opp.lifePoints} LP remaining)!")
+                log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [${trapCard.name}]!")
+                return true
+            }
+        }
+
         when (trapCard.name) {
             "Waboku" -> {
                 duelist.isWabokuActive = true
@@ -1263,11 +1416,28 @@ class DuelEngine {
                         attackerDuelist.lifePoints -= 1000
                         attackerDuelist.spellTrapZones[trapCounterSlot] = null
                         attackerDuelist.graveyard.add(counter)
+                        activeChain.clear()
+                        activeChain.add(ChainLink(1, trapCard, isPlayer = (defenderDuelist === player), isNegated = true, "Magic Cylinder Trigger"))
+                        activeChain.add(ChainLink(2, counter, isPlayer = (attackerDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                        lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Seven Tools of the Bandit] negated [Chain Link 1: Magic Cylinder]!"
                         log("⚡ CHAIN LINK 1: ${defenderDuelist.name} triggered Trap: [Magic Cylinder]!")
                         log("⚡ CHAIN LINK 2: ${attackerDuelist.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
                         log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [Magic Cylinder]!")
+                    } else if (counter.name == "Solemn Judgment" && attackerDuelist.lifePoints > 1) {
+                        val cost = attackerDuelist.lifePoints / 2
+                        attackerDuelist.lifePoints -= cost
+                        attackerDuelist.spellTrapZones[trapCounterSlot] = null
+                        attackerDuelist.graveyard.add(counter)
+                        activeChain.clear()
+                        activeChain.add(ChainLink(1, trapCard, isPlayer = (defenderDuelist === player), isNegated = true, "Magic Cylinder Trigger"))
+                        activeChain.add(ChainLink(2, counter, isPlayer = (attackerDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                        lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: Magic Cylinder]!"
+                        log("⚡ CHAIN LINK 1: ${defenderDuelist.name} triggered Trap: [Magic Cylinder]!")
+                        log("⚡ CHAIN LINK 2: ${attackerDuelist.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP)!")
+                        log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [Magic Cylinder]!")
                     } else {
-                        val damage = attackerMonster.card.atk
+                        val rawDamage = attackerMonster.card.atk
+                        val damage = checkKuribohHandTrap(attackerDuelist, rawDamage)
                         attackerDuelist.lifePoints = (attackerDuelist.lifePoints - damage).coerceAtLeast(0)
                         log("${defenderDuelist.name} triggered Trap: [Magic Cylinder]! Attack negated and $damage damage reflected to ${attackerDuelist.name}!")
                         clashState = ClashState(
@@ -1283,7 +1453,8 @@ class DuelEngine {
                         return true
                     }
                 } else {
-                    val damage = attackerMonster.card.atk
+                    val rawDamage = attackerMonster.card.atk
+                    val damage = checkKuribohHandTrap(attackerDuelist, rawDamage)
                     attackerDuelist.lifePoints = (attackerDuelist.lifePoints - damage).coerceAtLeast(0)
                     log("${defenderDuelist.name} triggered Trap: [Magic Cylinder]! Attack negated and $damage damage reflected to ${attackerDuelist.name}!")
                     clashState = ClashState(
@@ -1316,9 +1487,25 @@ class DuelEngine {
                         attackerDuelist.lifePoints -= 1000
                         attackerDuelist.spellTrapZones[trapCounterSlot] = null
                         attackerDuelist.graveyard.add(counter)
+                        activeChain.clear()
+                        activeChain.add(ChainLink(1, trapCard, isPlayer = (defenderDuelist === player), isNegated = true, "Mirror Force Trigger"))
+                        activeChain.add(ChainLink(2, counter, isPlayer = (attackerDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                        lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Seven Tools of the Bandit] negated [Chain Link 1: Mirror Force]!"
                         log("⚡ CHAIN LINK 1: ${defenderDuelist.name} triggered Trap: [Mirror Force]!")
                         log("⚡ CHAIN LINK 2: ${attackerDuelist.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
                         log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [Mirror Force]!")
+                    } else if (counter.name == "Solemn Judgment" && attackerDuelist.lifePoints > 1) {
+                        val cost = attackerDuelist.lifePoints / 2
+                        attackerDuelist.lifePoints -= cost
+                        attackerDuelist.spellTrapZones[trapCounterSlot] = null
+                        attackerDuelist.graveyard.add(counter)
+                        activeChain.clear()
+                        activeChain.add(ChainLink(1, trapCard, isPlayer = (defenderDuelist === player), isNegated = true, "Mirror Force Trigger"))
+                        activeChain.add(ChainLink(2, counter, isPlayer = (attackerDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                        lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: Mirror Force]!"
+                        log("⚡ CHAIN LINK 1: ${defenderDuelist.name} triggered Trap: [Mirror Force]!")
+                        log("⚡ CHAIN LINK 2: ${attackerDuelist.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP)!")
+                        log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [Mirror Force]!")
                     } else {
                         log("${defenderDuelist.name} triggered Trap: [Mirror Force]!")
                         var destroyedCount = 0
@@ -1387,7 +1574,8 @@ class DuelEngine {
             }
 
             attackerMonster.markAttacked()
-            val damage = getEffectiveAtk(attackerMonster.card, attackerMonster)
+            val rawDamage = getEffectiveAtk(attackerMonster.card, attackerMonster)
+            val damage = checkKuribohHandTrap(defenderDuelist, rawDamage)
             defenderDuelist.lifePoints = (defenderDuelist.lifePoints - damage).coerceAtLeast(0)
 
             if (attackerMonster.card.name == "White Magical Hat" && damage > 0 && defenderDuelist.hand.isNotEmpty()) {
@@ -1402,7 +1590,7 @@ class DuelEngine {
                 isDirectAttack = true,
                 damageDealt = damage,
                 damageToPlayer = !isPlayerTurn,
-                resultSummary = "${attackerMonster.card.name} attacks directly! (-$damage LP)"
+                resultSummary = if (damage > 0) "${attackerMonster.card.name} attacks directly! (-$damage LP)" else "${attackerMonster.card.name} direct attack negated by Kuriboh!"
             )
             log("DIRECT ATTACK: ${attackerMonster.card.name} attacked directly! $damage damage to ${defenderDuelist.name}.")
             checkWinConditions()
@@ -1467,7 +1655,8 @@ class DuelEngine {
         if (targetMonster.position == CardPosition.FACE_UP_ATTACK) {
             val dAtk = getEffectiveAtk(dCard, targetMonster)
             if (aAtk > dAtk) {
-                val diff = aAtk - dAtk
+                val rawDiff = aAtk - dAtk
+                val diff = checkKuribohHandTrap(defenderDuelist, rawDiff)
                 defenderDuelist.lifePoints = (defenderDuelist.lifePoints - diff).coerceAtLeast(0)
                 cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
@@ -1490,7 +1679,8 @@ class DuelEngine {
                 )
                 log("${attackerMonster.card.name} ($aAtk ATK) destroyed ${dCard.name} ($dAtk ATK)! $diff damage to ${defenderDuelist.name}.")
             } else if (aAtk < dAtk) {
-                val diff = dAtk - aAtk
+                val rawDiff = dAtk - aAtk
+                val diff = checkKuribohHandTrap(attackerDuelist, rawDiff)
                 attackerDuelist.lifePoints = (attackerDuelist.lifePoints - diff).coerceAtLeast(0)
                 cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
@@ -1546,7 +1736,8 @@ class DuelEngine {
                 )
                 log("${attackerMonster.card.name} ($aAtk ATK) destroyed ${dCard.name} ($dDef DEF). No LP damage.")
             } else if (aAtk < dDef) {
-                val diff = dDef - aAtk
+                val rawDiff = dDef - aAtk
+                val diff = checkKuribohHandTrap(attackerDuelist, rawDiff)
                 attackerDuelist.lifePoints = (attackerDuelist.lifePoints - diff).coerceAtLeast(0)
 
                 // Defender survives in FACE_UP_DEFENSE
