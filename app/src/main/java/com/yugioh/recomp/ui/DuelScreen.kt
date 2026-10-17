@@ -556,6 +556,13 @@ fun DuelScreen(
                         engine.setSpellTrap(isPlayer = true, handIndex = selectedCardHandIndex!!, slotIndex = slotIdx)
                         selectedCardHandIndex = null
                         refresh()
+                    } else if (!isAiExecuting && engine.player.spellTrapZones[slotIdx] != null) {
+                        val st = engine.player.spellTrapZones[slotIdx]!!
+                        if (st.card.isTrap) {
+                            playSfx("spell")
+                            engine.activateSetTrap(isPlayer = true, slotIndex = slotIdx)
+                            refresh()
+                        }
                     }
                 },
                 onInspectCard = { card: Card ->

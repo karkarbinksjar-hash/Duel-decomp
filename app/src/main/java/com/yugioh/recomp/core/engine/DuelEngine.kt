@@ -529,6 +529,39 @@ class DuelEngine {
             return false
         }
 
+        // Counter-Trap check: Magic Jammer or Solemn Judgment
+        val opp = if (isPlayer) opponent else player
+        val counterSlot = (0 until 5).firstOrNull { slot ->
+            val t = opp.spellTrapZones[slot]
+            t != null && t.position.isFaceDown && (t.card.name == "Magic Jammer" || t.card.name == "Solemn Judgment")
+        }
+
+        if (counterSlot != null && !isJinzoActive()) {
+            val counterTrap = opp.spellTrapZones[counterSlot]!!.card
+            if (counterTrap.name == "Magic Jammer" && opp.hand.isNotEmpty()) {
+                val discard = opp.hand.removeAt(0)
+                opp.graveyard.add(discard.card)
+                opp.spellTrapZones[counterSlot] = null
+                opp.graveyard.add(counterTrap)
+                duelist.hand.removeAt(handIndex)
+                duelist.graveyard.add(card)
+                log("⚡ CHAIN LINK 1: ${duelist.name} activates Spell: [${card.name}]")
+                log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Magic Jammer] (Discarded [${discard.card.name}])!")
+                log("❌ CHAIN RESOLUTION: [Magic Jammer] negates and destroys [${card.name}]!")
+                return true
+            } else if (counterTrap.name == "Solemn Judgment" && opp.lifePoints > 1) {
+                opp.lifePoints /= 2
+                opp.spellTrapZones[counterSlot] = null
+                opp.graveyard.add(counterTrap)
+                duelist.hand.removeAt(handIndex)
+                duelist.graveyard.add(card)
+                log("⚡ CHAIN LINK 1: ${duelist.name} activates Spell: [${card.name}]")
+                log("⚡ CHAIN LINK 2: ${opp.name} chains Counter-Trap: [Solemn Judgment] (Paid half LP: ${opp.lifePoints})!")
+                log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [${card.name}]!")
+                return true
+            }
+        }
+
         val emptySlot = duelist.firstEmptySpellSlot()
         val tempSlot = if (emptySlot != -1) emptySlot else 0
 
@@ -707,6 +740,60 @@ class DuelEngine {
     }
 
     /**
+     * Activates a set Trap card from the Spell/Trap zone.
+     */
+    fun activateSetTrap(isPlayer: Boolean, slotIndex: Int): Boolean {
+        val duelist = if (isPlayer) player else opponent
+        val opp = if (isPlayer) opponent else player
+        if (winner != null || slotIndex !in 0..4) return false
+
+        val duelCard = duelist.spellTrapZones[slotIndex] ?: return false
+        if (!duelCard.card.isTrap) return false
+
+        val trapCard = duelCard.card
+        if (isJinzoActive()) {
+            log("⚡ Jinzo's continuous effect negates the activation of [${trapCard.name}]!")
+            return false
+        }
+
+        duelist.spellTrapZones[slotIndex] = null
+        duelist.graveyard.add(trapCard)
+        log("${duelist.name} activated Trap: [${trapCard.name}]!")
+
+        when (trapCard.name) {
+            "Waboku" -> {
+                duelist.isWabokuActive = true
+                log("🛡️ [Waboku] active: ${duelist.name} will take no battle damage this turn!")
+            }
+            "Just Desserts" -> {
+                val count = opp.activeMonstersCount()
+                val damage = count * 500
+                opp.lifePoints = (opp.lifePoints - damage).coerceAtLeast(0)
+                log("💥 [Just Desserts] deals $damage damage to ${opp.name} ($count monsters x 500)!")
+                checkWinConditions()
+            }
+            "Reinforcements" -> {
+                val targetMonSlot = (0 until 5).firstOrNull { duelist.monsterZones[it] != null }
+                if (targetMonSlot != null) {
+                    val m = duelist.monsterZones[targetMonSlot]!!
+                    duelist.temporaryAtkBuffs[targetMonSlot] = (duelist.temporaryAtkBuffs[targetMonSlot] ?: 0) + 500
+                    log("⚡ [Reinforcements] gives [${m.card.name}] +500 ATK this turn!")
+                }
+            }
+            "Spellbinding Circle" -> {
+                val oppTarget = (0 until 5).firstOrNull { opp.monsterZones[it] != null }
+                if (oppTarget != null) {
+                    val m = opp.monsterZones[oppTarget]!!
+                    m.hasAttackedThisTurn = true
+                    m.canChangePosition = false
+                    log("🕸️ [Spellbinding Circle] binds [${m.card.name}]! Cannot attack or change position.")
+                }
+            }
+        }
+        return true
+    }
+
+    /**
      * Checks if a monster at the specified slot is eligible to declare an attack this turn.
      */
     fun canMonsterAttack(isPlayer: Boolean, slotIndex: Int): Boolean {
@@ -746,8 +833,29 @@ class DuelEngine {
             return false
         }
 
+        // Waboku protection check
+        if (defenderDuelist.isWabokuActive) {
+            attackerMonster.markAttacked()
+            val targetMonster = targetSlot?.let { defenderDuelist.monsterZones.getOrNull(it) }
+            clashState = ClashState(
+                attackerCard = attackerMonster.card,
+                defenderCard = targetMonster?.card,
+                isDirectAttack = (targetSlot == null),
+                damageDealt = 0,
+                damageToPlayer = false,
+                resultSummary = "WABOKU: ${defenderDuelist.name}'s Waboku prevents all battle damage!"
+            )
+            log("🛡️ WABOKU SHIELD: ${defenderDuelist.name}'s Waboku prevents battle damage and monster destruction!")
+            return true
+        }
+
         // Trap Trigger on Attack Declaration (Negated by Jinzo!)
         if (!isJinzoActive()) {
+            val trapCounterSlot = (0 until 5).firstOrNull { slot ->
+                val t = attackerDuelist.spellTrapZones[slot]
+                t != null && t.position.isFaceDown && (t.card.name == "Seven Tools of the Bandit" || t.card.name == "Solemn Judgment")
+            }
+
             // Magic Cylinder
             val magicCylinderSlot = (0 until 5).firstOrNull { slot ->
                 val trap = defenderDuelist.spellTrapZones[slot]
@@ -757,20 +865,48 @@ class DuelEngine {
                 val trapCard = defenderDuelist.spellTrapZones[magicCylinderSlot]!!.card
                 defenderDuelist.spellTrapZones[magicCylinderSlot] = null
                 defenderDuelist.graveyard.add(trapCard)
-                val damage = attackerMonster.card.atk
-                attackerDuelist.lifePoints = (attackerDuelist.lifePoints - damage).coerceAtLeast(0)
-                log("${defenderDuelist.name} triggered Trap: [Magic Cylinder]! Attack negated and $damage damage reflected to ${attackerDuelist.name}!")
-                clashState = ClashState(
-                    attackerCard = attackerMonster.card,
-                    defenderCard = trapCard,
-                    isDirectAttack = false,
-                    damageDealt = damage,
-                    damageToPlayer = isPlayerTurn,
-                    resultSummary = "TRAP: Magic Cylinder reflected $damage damage!"
-                )
-                attackerMonster.markAttacked()
-                checkWinConditions()
-                return true
+
+                if (trapCounterSlot != null) {
+                    val counter = attackerDuelist.spellTrapZones[trapCounterSlot]!!.card
+                    if (counter.name == "Seven Tools of the Bandit" && attackerDuelist.lifePoints > 1000) {
+                        attackerDuelist.lifePoints -= 1000
+                        attackerDuelist.spellTrapZones[trapCounterSlot] = null
+                        attackerDuelist.graveyard.add(counter)
+                        log("⚡ CHAIN LINK 1: ${defenderDuelist.name} triggered Trap: [Magic Cylinder]!")
+                        log("⚡ CHAIN LINK 2: ${attackerDuelist.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
+                        log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [Magic Cylinder]!")
+                    } else {
+                        val damage = attackerMonster.card.atk
+                        attackerDuelist.lifePoints = (attackerDuelist.lifePoints - damage).coerceAtLeast(0)
+                        log("${defenderDuelist.name} triggered Trap: [Magic Cylinder]! Attack negated and $damage damage reflected to ${attackerDuelist.name}!")
+                        clashState = ClashState(
+                            attackerCard = attackerMonster.card,
+                            defenderCard = trapCard,
+                            isDirectAttack = false,
+                            damageDealt = damage,
+                            damageToPlayer = isPlayerTurn,
+                            resultSummary = "TRAP: Magic Cylinder reflected $damage damage!"
+                        )
+                        attackerMonster.markAttacked()
+                        checkWinConditions()
+                        return true
+                    }
+                } else {
+                    val damage = attackerMonster.card.atk
+                    attackerDuelist.lifePoints = (attackerDuelist.lifePoints - damage).coerceAtLeast(0)
+                    log("${defenderDuelist.name} triggered Trap: [Magic Cylinder]! Attack negated and $damage damage reflected to ${attackerDuelist.name}!")
+                    clashState = ClashState(
+                        attackerCard = attackerMonster.card,
+                        defenderCard = trapCard,
+                        isDirectAttack = false,
+                        damageDealt = damage,
+                        damageToPlayer = isPlayerTurn,
+                        resultSummary = "TRAP: Magic Cylinder reflected $damage damage!"
+                    )
+                    attackerMonster.markAttacked()
+                    checkWinConditions()
+                    return true
+                }
             }
 
             // Mirror Force
@@ -782,28 +918,62 @@ class DuelEngine {
                 val trapCard = defenderDuelist.spellTrapZones[mirrorForceSlot]!!.card
                 defenderDuelist.spellTrapZones[mirrorForceSlot] = null
                 defenderDuelist.graveyard.add(trapCard)
-                log("${defenderDuelist.name} triggered Trap: [Mirror Force]!")
 
-                var destroyedCount = 0
-                for (i in 0 until 5) {
-                    val m = attackerDuelist.monsterZones[i]
-                    if (m != null && m.position == CardPosition.FACE_UP_ATTACK) {
-                        attackerDuelist.graveyard.add(m.card)
-                        attackerDuelist.monsterZones[i] = null
-                        destroyedCount++
+                if (trapCounterSlot != null) {
+                    val counter = attackerDuelist.spellTrapZones[trapCounterSlot]!!.card
+                    if (counter.name == "Seven Tools of the Bandit" && attackerDuelist.lifePoints > 1000) {
+                        attackerDuelist.lifePoints -= 1000
+                        attackerDuelist.spellTrapZones[trapCounterSlot] = null
+                        attackerDuelist.graveyard.add(counter)
+                        log("⚡ CHAIN LINK 1: ${defenderDuelist.name} triggered Trap: [Mirror Force]!")
+                        log("⚡ CHAIN LINK 2: ${attackerDuelist.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
+                        log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [Mirror Force]!")
+                    } else {
+                        log("${defenderDuelist.name} triggered Trap: [Mirror Force]!")
+                        var destroyedCount = 0
+                        for (i in 0 until 5) {
+                            val m = attackerDuelist.monsterZones[i]
+                            if (m != null && m.position == CardPosition.FACE_UP_ATTACK) {
+                                attackerDuelist.graveyard.add(m.card)
+                                attackerDuelist.monsterZones[i] = null
+                                destroyedCount++
+                            }
+                        }
+                        clashState = ClashState(
+                            attackerCard = attackerMonster.card,
+                            defenderCard = trapCard,
+                            isDirectAttack = false,
+                            damageDealt = 0,
+                            damageToPlayer = false,
+                            resultSummary = "TRAP: Mirror Force destroyed $destroyedCount monster(s)!"
+                        )
+                        log("Mirror Force destroyed $destroyedCount attacking monster(s) on ${attackerDuelist.name}'s field!")
+                        checkWinConditions()
+                        return true
                     }
+                } else {
+                    log("${defenderDuelist.name} triggered Trap: [Mirror Force]!")
+                    var destroyedCount = 0
+                    for (i in 0 until 5) {
+                        val m = attackerDuelist.monsterZones[i]
+                        if (m != null && m.position == CardPosition.FACE_UP_ATTACK) {
+                            attackerDuelist.graveyard.add(m.card)
+                            attackerDuelist.monsterZones[i] = null
+                            destroyedCount++
+                        }
+                    }
+                    clashState = ClashState(
+                        attackerCard = attackerMonster.card,
+                        defenderCard = trapCard,
+                        isDirectAttack = false,
+                        damageDealt = 0,
+                        damageToPlayer = false,
+                        resultSummary = "TRAP: Mirror Force destroyed $destroyedCount monster(s)!"
+                    )
+                    log("Mirror Force destroyed $destroyedCount attacking monster(s) on ${attackerDuelist.name}'s field!")
+                    checkWinConditions()
+                    return true
                 }
-                clashState = ClashState(
-                    attackerCard = attackerMonster.card,
-                    defenderCard = trapCard,
-                    isDirectAttack = false,
-                    damageDealt = 0,
-                    damageToPlayer = false,
-                    resultSummary = "TRAP: Mirror Force destroyed $destroyedCount monster(s)!"
-                )
-                log("Mirror Force destroyed $destroyedCount attacking monster(s) on ${attackerDuelist.name}'s field!")
-                checkWinConditions()
-                return true
             }
         } else {
             log("⚡ Jinzo's presence negates all Trap cards on the field!")

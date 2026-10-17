@@ -80,7 +80,9 @@ class Duelist(
     val graveyard: MutableList<Card> = mutableListOf(),
     val monsterZones: Array<DuelCard?> = arrayOfNulls(5),
     val spellTrapZones: Array<DuelCard?> = arrayOfNulls(5),
-    var swordsTurnsRemaining: Int = 0
+    var swordsTurnsRemaining: Int = 0,
+    var isWabokuActive: Boolean = false,
+    val temporaryAtkBuffs: MutableMap<Int, Int> = mutableMapOf()
 ) {
     fun activeMonstersCount(): Int = monsterZones.count { it != null }
     fun activeSpellTrapsCount(): Int = spellTrapZones.count { it != null }
@@ -92,11 +94,21 @@ class Duelist(
 
     fun resetTurnActions() {
         if (swordsTurnsRemaining > 0) swordsTurnsRemaining--
+        isWabokuActive = false
+        temporaryAtkBuffs.clear()
         for (monster in monsterZones) {
             monster?.resetTurnActions()
         }
     }
 }
+
+data class ChainLink(
+    val linkIndex: Int,
+    val card: Card,
+    val isPlayer: Boolean,
+    var isNegated: Boolean = false,
+    val description: String
+)
 
 sealed class AiTurnStep {
     abstract val announcement: String

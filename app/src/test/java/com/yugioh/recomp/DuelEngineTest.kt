@@ -929,4 +929,106 @@ class DuelEngineTest {
         assertEquals("Opponent hand size should decrease by 1 due to White Magical Hat effect", initialHandSize - 1, testEngine.opponent.hand.size)
         assertTrue("Opponent graveyard should contain the discarded card", testEngine.opponent.graveyard.isNotEmpty())
     }
+
+    @Test
+    fun testMagicJammerChainsAndNegatesSpell() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent has set Magic Jammer and at least 1 card in hand to discard
+        val magicJammer = Card(id = 889, name = "Magic Jammer", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = magicJammer, position = CardPosition.SET_SPELL_TRAP)
+        assertTrue("Opponent must have discard material in hand", testEngine.opponent.hand.isNotEmpty())
+
+        // Player activates Raigeki
+        val raigeki = Card(id = 20, name = "Raigeki", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL, monsterType = MonsterType.NONE)
+        testEngine.player.hand.add(DuelCard(card = raigeki))
+
+        // Also put a monster on opponent field to verify it is NOT destroyed by Raigeki
+        testEngine.opponent.monsterZones[0] = DuelCard(card = Card(id = 5, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND))
+
+        assertTrue("Player activates spell", testEngine.activateSpell(isPlayer = true, handIndex = testEngine.player.hand.size - 1))
+
+        // Magic Jammer should negate Raigeki!
+        assertNotNull("Kuriboh should survive because Raigeki was negated by Magic Jammer", testEngine.opponent.monsterZones[0])
+        assertNull("Magic Jammer should be removed from field", testEngine.opponent.spellTrapZones[0])
+        assertTrue("Magic Jammer should be in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Magic Jammer" })
+        assertTrue("Raigeki should be in player graveyard", testEngine.player.graveyard.any { it.name == "Raigeki" })
+    }
+
+    @Test
+    fun testSevenToolsOfBanditChainsAndNegatesMirrorForce() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player controls Vorse Raider and has set Seven Tools of the Bandit
+        val vorseRaider = Card(id = 10, name = "Vorse Raider", atk = 1900, def = 1200, level = 4, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.BEAST_WARRIOR)
+        testEngine.player.monsterZones[0] = DuelCard(card = vorseRaider, position = CardPosition.FACE_UP_ATTACK)
+
+        val sevenTools = Card(id = 891, name = "Seven Tools of the Bandit", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.player.spellTrapZones[0] = DuelCard(card = sevenTools, position = CardPosition.SET_SPELL_TRAP)
+        val initialPlayerLp = testEngine.player.lifePoints
+
+        // Opponent controls set Mirror Force and an attack target
+        val mirrorForce = Card(id = 99, name = "Mirror Force", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = mirrorForce, position = CardPosition.SET_SPELL_TRAP)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = Card(id = 2, name = "Mystical Elf", atk = 800, def = 2000, level = 4, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.SPELLCASTER), position = CardPosition.FACE_UP_DEFENSE)
+
+        testEngine.nextPhase() // BATTLE_PHASE
+        assertTrue("Attack declared", testEngine.declareAttack(attackerSlot = 0, targetSlot = 0))
+
+        // Seven Tools should pay 1000 LP and negate Mirror Force, so Vorse Raider survives!
+        assertEquals("Player should pay 1000 LP for Seven Tools", initialPlayerLp - 1000, testEngine.player.lifePoints)
+        assertNotNull("Vorse Raider should NOT be destroyed because Mirror Force was negated!", testEngine.player.monsterZones[0])
+        assertTrue("Seven Tools should be in player graveyard", testEngine.player.graveyard.any { it.name == "Seven Tools of the Bandit" })
+    }
+
+    @Test
+    fun testWabokuPreventsBattleDamageAndDestruction() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player activates Waboku
+        val waboku = Card(id = 913, name = "Waboku", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.player.spellTrapZones[0] = DuelCard(card = waboku, position = CardPosition.SET_SPELL_TRAP)
+        assertTrue("Activate set Waboku", testEngine.activateSetTrap(isPlayer = true, slotIndex = 0))
+        assertTrue("Waboku should be active on player", testEngine.player.isWabokuActive)
+
+        // Player has Kuriboh in Attack position (300 ATK)
+        testEngine.player.monsterZones[0] = DuelCard(card = Card(id = 5, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND))
+        val initialPlayerLp = testEngine.player.lifePoints
+
+        // Opponent has Blue-Eyes White Dragon (3000 ATK) and attacks
+        testEngine.opponent.monsterZones[0] = DuelCard(card = Card(id = 1, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.DRAGON))
+        testEngine.passTurn(autoRunAi = false)
+        while (testEngine.currentPhase != DuelPhase.BATTLE_PHASE) {
+            testEngine.nextPhase()
+        }
+
+        assertTrue("Opponent attacks Kuriboh", testEngine.declareAttack(attackerSlot = 0, targetSlot = 0))
+
+        // Kuriboh must NOT be destroyed, and player must take 0 damage!
+        assertNotNull("Kuriboh must survive due to Waboku", testEngine.player.monsterZones[0])
+        assertEquals("Player Life Points should not change", initialPlayerLp, testEngine.player.lifePoints)
+    }
+
+    @Test
+    fun testJustDessertsDeals500PerMonster() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val justDesserts = Card(id = 899, name = "Just Desserts", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.player.spellTrapZones[0] = DuelCard(card = justDesserts, position = CardPosition.SET_SPELL_TRAP)
+
+        // Opponent has 3 monsters on field
+        testEngine.opponent.monsterZones[0] = DuelCard(card = Card(id = 1, name = "Mon1", atk = 1000, def = 1000, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR))
+        testEngine.opponent.monsterZones[1] = DuelCard(card = Card(id = 2, name = "Mon2", atk = 1000, def = 1000, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR))
+        testEngine.opponent.monsterZones[2] = DuelCard(card = Card(id = 3, name = "Mon3", atk = 1000, def = 1000, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR))
+
+        val initialOppLp = testEngine.opponent.lifePoints
+        assertTrue("Activate Just Desserts", testEngine.activateSetTrap(isPlayer = true, slotIndex = 0))
+
+        // 3 monsters * 500 = 1500 damage
+        assertEquals("Opponent should take 1500 damage", initialOppLp - 1500, testEngine.opponent.lifePoints)
+    }
 }
