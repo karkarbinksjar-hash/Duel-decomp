@@ -535,6 +535,7 @@ fun DuelScreen(
                 opponentName = engine.opponent.name,
                 turnNumber = engine.turnNumber,
                 currentPhase = engine.currentPhase,
+                matchStatus = if (engine.isMatchDuel) "M:${engine.playerMatchWins}-${engine.opponentMatchWins} (G${engine.matchGameNumber})" else null,
                 onOpenMenu = { isMenuOpen = true }
             )
 
@@ -1033,9 +1034,23 @@ fun DuelScreen(
                 opponentWins = GbaCampaignManager.opponentWins[engine.opponent.name] ?: 0,
                 deckCapacity = DdsCampaignManager.deckCapacity,
                 duelistLevel = DdsCampaignManager.duelistLevel,
+                isMatchOngoing = engine.isMatchDuel && !engine.isMatchFinished,
+                matchScoreText = if (engine.isMatchDuel) "${engine.playerMatchWins} - ${engine.opponentMatchWins}" else null,
+                onAdvanceMatch = {
+                    engine.advanceMatchGame()
+                    selectedCardHandIndex = null
+                    selectedPlayerMonsterSlot = null
+                    selectedOpponentSlot = null
+                    selectedFieldCard = null
+                    refresh()
+                },
                 onRestart = {
                     val oppName = if (isGba) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName
-                    engine.startDuel(oppName)
+                    if (engine.isMatchDuel) {
+                        engine.startMatchDuel(oppName)
+                    } else {
+                        engine.startDuel(oppName)
+                    }
                     selectedCardHandIndex = null
                     selectedPlayerMonsterSlot = null
                     selectedOpponentSlot = null
@@ -1057,6 +1072,7 @@ private fun DuelTopBar(
     opponentName: String,
     turnNumber: Int,
     currentPhase: DuelPhase,
+    matchStatus: String? = null,
     onOpenMenu: () -> Unit
 ) {
     Surface(
@@ -1096,8 +1112,9 @@ private fun DuelTopBar(
                         fontWeight = FontWeight.Black,
                         letterSpacing = 0.5.sp
                     )
+                    val matchPrefix = if (matchStatus != null) " • $matchStatus" else ""
                     Text(
-                        text = "VS $opponentName • T$turnNumber • ${currentPhase.shortName}",
+                        text = "VS $opponentName$matchPrefix • T$turnNumber • ${currentPhase.shortName}",
                         color = Color(0xFF94A3B8),
                         fontSize = 8.5.sp,
                         fontFamily = FontFamily.Monospace,
@@ -3289,6 +3306,9 @@ private fun WinnerOverlay(
     opponentWins: Int,
     deckCapacity: Int,
     duelistLevel: Int,
+    isMatchOngoing: Boolean = false,
+    matchScoreText: String? = null,
+    onAdvanceMatch: (() -> Unit)? = null,
     onRestart: () -> Unit,
     onExit: () -> Unit
 ) {
@@ -3471,13 +3491,25 @@ private fun WinnerOverlay(
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            if (isMatchOngoing && onAdvanceMatch != null) {
+                Button(
+                    onClick = onAdvanceMatch,
+                    colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(0.75f).height(44.dp)
+                ) {
+                    Text("Advance to Next Match Game ($matchScoreText)", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 12.5.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
             Button(
                 onClick = onRestart,
-                colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold),
+                colors = ButtonDefaults.buttonColors(containerColor = if (isMatchOngoing) Color(0xFF1E293B) else MillenniumGold),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(0.7f).height(44.dp)
             ) {
-                Text("Rematch Duel", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                Text(if (isMatchOngoing) "Restart Match" else "Rematch Duel", color = if (isMatchOngoing) Color.White else Color.Black, fontWeight = FontWeight.Black, fontSize = 13.sp)
             }
 
             Spacer(modifier = Modifier.height(10.dp))

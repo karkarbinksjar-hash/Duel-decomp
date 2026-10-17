@@ -42,6 +42,19 @@ class DuelEngine {
     val activeChain: MutableList<ChainLink> = mutableListOf()
     var lastChainSummary: String? = null
 
+    var isMatchDuel: Boolean = false
+        private set
+    var playerMatchWins: Int = 0
+        private set
+    var opponentMatchWins: Int = 0
+        private set
+    var matchGameNumber: Int = 1
+        private set
+    var isMatchFinished: Boolean = false
+        private set
+    var matchWinner: Duelist? = null
+        private set
+
     private val tempControlledMonsters = mutableListOf<TempControlRecord>()
 
     data class TempControlRecord(
@@ -178,6 +191,9 @@ class DuelEngine {
         player.deck.clear()
         player.hand.clear()
         player.graveyard.clear()
+        player.banishedZone.clear()
+        player.sideDeck.clear()
+        player.sideDeck.addAll(GbaCampaignManager.activeSideDeck.ifEmpty { GbaCampaignManager.getStarterSideDeck() })
         player.extraDeck.clear()
         player.extraDeck.addAll(FusionRitualRegistry.getDefaultExtraDeck())
         player.swordsTurnsRemaining = 0
@@ -190,6 +206,9 @@ class DuelEngine {
         opponent.deck.clear()
         opponent.hand.clear()
         opponent.graveyard.clear()
+        opponent.banishedZone.clear()
+        opponent.sideDeck.clear()
+        opponent.sideDeck.addAll(GbaCampaignManager.getStarterSideDeck())
         opponent.extraDeck.clear()
         opponent.extraDeck.addAll(FusionRitualRegistry.getDefaultExtraDeck())
         opponent.swordsTurnsRemaining = 0
@@ -242,6 +261,100 @@ class DuelEngine {
         log("Turn 1 - ${player.name}'s Turn (Main Phase 1)")
 
         currentPhase = DuelPhase.MAIN_PHASE_1
+    }
+
+    fun startMatchDuel(
+        opponentName: String = if (isGbaMode) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName,
+        startingLp: Int = 8000,
+        customOpponentDeck: List<Card>? = null
+    ) {
+        isMatchDuel = true
+        playerMatchWins = 0
+        opponentMatchWins = 0
+        matchGameNumber = 1
+        isMatchFinished = false
+        matchWinner = null
+        startDuel(opponentName, startingLp, customOpponentDeck)
+        log("🏆 BEST-OF-3 TOURNAMENT MATCH STARTED! Game 1 / 3 against ${opponent.name}.")
+    }
+
+    fun advanceMatchGame(): Boolean {
+        if (!isMatchDuel || isMatchFinished || winner == null) return false
+        matchGameNumber++
+        winner = null
+        isExodiaWin = false
+        turnNumber = 1
+        isPlayerTurn = true
+        currentPhase = DuelPhase.MAIN_PHASE_1
+        hasNormalSummonedThisTurn = false
+        activeFieldSpell = null
+        clashState = null
+        lastTriggeredTrap = null
+        lastActivatedSpell = null
+        activeChain.clear()
+        lastChainSummary = null
+
+        player.lifePoints = 8000
+        player.deck.clear()
+        player.hand.clear()
+        player.graveyard.clear()
+        player.banishedZone.clear()
+        player.swordsTurnsRemaining = 0
+        player.isWabokuActive = false
+        player.temporaryAtkBuffs.clear()
+        for (i in 0 until 5) {
+            player.monsterZones[i] = null
+            player.spellTrapZones[i] = null
+        }
+
+        opponent.lifePoints = 8000
+        opponent.deck.clear()
+        opponent.hand.clear()
+        opponent.graveyard.clear()
+        opponent.banishedZone.clear()
+        opponent.swordsTurnsRemaining = 0
+        opponent.isWabokuActive = false
+        opponent.temporaryAtkBuffs.clear()
+        for (i in 0 until 5) {
+            opponent.monsterZones[i] = null
+            opponent.spellTrapZones[i] = null
+        }
+
+        val pDeck = if (GbaCampaignManager.activeDeck.size in 40..60) {
+            GbaCampaignManager.activeDeck.toList()
+        } else {
+            GbaCampaignManager.getGbaStarterDeck()
+        }
+        val oDeck = GbaCampaignManager.buildGbaOpponentDeck(opponent.name)
+        player.deck.addAll(pDeck.shuffled())
+        opponent.deck.addAll(oDeck.shuffled())
+
+        for (i in 0 until 5) {
+            drawCard(isPlayer = true, ignoreHandLimit = true)
+            drawCard(isPlayer = false, ignoreHandLimit = true)
+        }
+        log("=== MATCH GAME $matchGameNumber BEGINS! (Score: ${player.name} $playerMatchWins - ${opponent.name} $opponentMatchWins) ===")
+        return true
+    }
+
+    fun swapSideDeckCard(isPlayer: Boolean, mainDeckCardIndex: Int, sideDeckCardIndex: Int): Boolean {
+        val duelist = if (isPlayer) player else opponent
+        if (mainDeckCardIndex !in duelist.deck.indices || sideDeckCardIndex !in duelist.sideDeck.indices) {
+            return false
+        }
+        val mainCard = duelist.deck[mainDeckCardIndex]
+        val sideCard = duelist.sideDeck[sideDeckCardIndex]
+
+        duelist.deck[mainDeckCardIndex] = sideCard
+        duelist.sideDeck[sideDeckCardIndex] = mainCard
+        if (isPlayer) {
+            val gbaIdx = GbaCampaignManager.activeDeck.indexOfFirst { it.name == mainCard.name }
+            if (gbaIdx != -1) {
+                GbaCampaignManager.activeDeck[gbaIdx] = sideCard
+            }
+        }
+        log("🔄 SIDE DECK: ${duelist.name} swapped [${mainCard.name}] for [${sideCard.name}] from Side Deck.")
+        return true
     }
 
     /**
@@ -660,6 +773,32 @@ class DuelEngine {
     fun isImperialOrderActive(): Boolean {
         return player.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Imperial Order" } ||
             opponent.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Imperial Order" }
+    }
+
+    fun isFlipEffectMonster(card: Card): Boolean =
+        card.name in listOf(
+            "Man-Eater Bug", "Cyber Jar", "Morphing Jar", "Hane-Hane",
+            "Penguin Soldier", "Needle Worm", "Magician of Faith",
+            "Mask of Darkness", "Trap Master", "Skelengel"
+        ) || card.description.contains("FLIP:", ignoreCase = true)
+
+    fun handleStandbyPhaseUpkeep() {
+        val currentDuelist = if (isPlayerTurn) player else opponent
+        // Imperial Order 700 LP maintenance upkeep
+        for (i in 0 until 5) {
+            val st = currentDuelist.spellTrapZones[i]
+            if (st != null && !st.position.isFaceDown && st.card.name == "Imperial Order") {
+                if (currentDuelist.lifePoints > 700) {
+                    currentDuelist.lifePoints -= 700
+                    log("⚡ IMPERIAL ORDER: ${currentDuelist.name} paid 700 LP maintenance cost! (${currentDuelist.lifePoints} LP remaining)")
+                    checkWinConditions()
+                } else {
+                    currentDuelist.spellTrapZones[i] = null
+                    currentDuelist.graveyard.add(st.card)
+                    log("⚡ IMPERIAL ORDER: ${currentDuelist.name} could not pay 700 LP maintenance cost! Imperial Order was destroyed!")
+                }
+            }
+        }
     }
 
     fun triggerGraveyardSearcher(card: Card, duelist: Duelist) {
@@ -1333,6 +1472,127 @@ class DuelEngine {
             "Toll" -> {
                 log("💰 TOLL: A golden toll bridge rises! Either player must pay 500 LP to declare an attack with any monster.")
             }
+            "Delinquent Duo" -> {
+                if (duelist.lifePoints > 1000) {
+                    duelist.lifePoints -= 1000
+                    log("🃏 DELINQUENT DUO: ${duelist.name} paid 1000 LP! (${duelist.lifePoints} LP remaining)")
+                }
+                var discardedCount = 0
+                if (opp.hand.isNotEmpty()) {
+                    val rIdx = opp.hand.indices.random()
+                    val c1 = opp.hand.removeAt(rIdx)
+                    opp.graveyard.add(c1.card)
+                    discardedCount++
+                    log("Delinquent Duo: ${opp.name} randomly discarded [${c1.card.name}]!")
+                }
+                if (opp.hand.isNotEmpty()) {
+                    val c2 = opp.hand.minByOrNull { it.card.atk } ?: opp.hand.first()
+                    opp.hand.remove(c2)
+                    opp.graveyard.add(c2.card)
+                    discardedCount++
+                    log("Delinquent Duo: ${opp.name} discarded chosen card [${c2.card.name}]!")
+                }
+                log("Delinquent Duo forced ${opp.name} to discard $discardedCount card(s).")
+            }
+            "The Forceful Sentry" -> {
+                if (opp.hand.isNotEmpty()) {
+                    val chosen = opp.hand.maxByOrNull { if (it.card.isMonster) it.card.atk else 2500 } ?: opp.hand.first()
+                    opp.hand.remove(chosen)
+                    opp.deck.add(chosen.card)
+                    opp.deck.shuffle()
+                    log("👁️ THE FORCEFUL SENTRY: ${duelist.name} inspected ${opp.name}'s hand and returned [${chosen.card.name}] to their Deck (Deck shuffled)!")
+                } else {
+                    log("The Forceful Sentry: ${opp.name}'s hand is empty.")
+                }
+            }
+            "Confiscation" -> {
+                if (duelist.lifePoints > 1000) {
+                    duelist.lifePoints -= 1000
+                    log("👁️ CONFISCATION: ${duelist.name} paid 1000 LP! (${duelist.lifePoints} LP remaining)")
+                }
+                if (opp.hand.isNotEmpty()) {
+                    val chosen = opp.hand.maxByOrNull { if (it.card.isMonster) it.card.atk else 2500 } ?: opp.hand.first()
+                    opp.hand.remove(chosen)
+                    opp.graveyard.add(chosen.card)
+                    log("Confiscation: ${duelist.name} selected and discarded [${chosen.card.name}] from ${opp.name}'s hand to the Graveyard!")
+                } else {
+                    log("Confiscation: ${opp.name}'s hand is empty.")
+                }
+            }
+            "Card Destruction" -> {
+                val pCount = player.hand.size
+                player.graveyard.addAll(player.hand.map { it.card })
+                player.hand.clear()
+
+                val oCount = opponent.hand.size
+                opponent.graveyard.addAll(opponent.hand.map { it.card })
+                opponent.hand.clear()
+
+                repeat(pCount) {
+                    if (player.deck.isNotEmpty()) drawCard(isPlayer = true, ignoreHandLimit = true)
+                }
+                repeat(oCount) {
+                    if (opponent.deck.isNotEmpty()) drawCard(isPlayer = false, ignoreHandLimit = true)
+                }
+                log("💥 CARD DESTRUCTION: Both duelists discarded their hands! ${player.name} drew $pCount card(s), ${opponent.name} drew $oCount card(s).")
+                checkWinConditions()
+            }
+            "Nobleman of Crossout" -> {
+                val oppTarget = (0 until 5).firstOrNull { opp.monsterZones[it]?.position == CardPosition.FACE_DOWN_DEFENSE }
+                val (targetZone, targetOwner, targetSlot) = if (oppTarget != null) {
+                    Triple(opp.monsterZones, opp, oppTarget)
+                } else {
+                    val pTarget = (0 until 5).firstOrNull { duelist.monsterZones[it]?.position == CardPosition.FACE_DOWN_DEFENSE }
+                    Triple(duelist.monsterZones, duelist, pTarget)
+                }
+
+                if (targetSlot != null) {
+                    val targetDuelCard = targetZone[targetSlot]!!
+                    val victimCard = targetDuelCard.card
+                    targetZone[targetSlot] = null
+                    targetOwner.banishedZone.add(victimCard)
+                    log("⚔️ NOBLEMAN OF CROSSOUT: Destroyed and banished face-down monster [${victimCard.name}]!")
+
+                    if (isFlipEffectMonster(victimCard)) {
+                        val pCopies = player.deck.filter { it.name.equals(victimCard.name, ignoreCase = true) }
+                        player.deck.removeAll(pCopies)
+                        player.banishedZone.addAll(pCopies)
+
+                        val oCopies = opponent.deck.filter { it.name.equals(victimCard.name, ignoreCase = true) }
+                        opponent.deck.removeAll(oCopies)
+                        opponent.banishedZone.addAll(oCopies)
+
+                        log("🌀 CROSSOUT EXILE: [${victimCard.name}] is a Flip Effect monster! Banished ${pCopies.size} copy/copies from ${player.name}'s Deck and ${oCopies.size} from ${opponent.name}'s Deck!")
+                    }
+                } else {
+                    log("Nobleman of Crossout resolved: No face-down monsters on the field to banish.")
+                }
+            }
+            "Mystical Space Typhoon" -> {
+                val oppTarget = (0 until 5).firstOrNull { opp.spellTrapZones[it] != null }
+                if (oppTarget != null) {
+                    val destroyed = opp.spellTrapZones[oppTarget]!!
+                    opp.spellTrapZones[oppTarget] = null
+                    opp.graveyard.add(destroyed.card)
+                    if (destroyed.card.name == "Toon World") {
+                        checkToonWorldDestruction(opp)
+                    }
+                    log("🌪️ MYSTICAL SPACE TYPHOON: Destroyed [${destroyed.card.name}] in Zone ${oppTarget + 1} on ${opp.name}'s field!")
+                } else {
+                    val myTarget = (0 until 5).firstOrNull { it != zoneSlot && duelist.spellTrapZones[it] != null }
+                    if (myTarget != null) {
+                        val destroyed = duelist.spellTrapZones[myTarget]!!
+                        duelist.spellTrapZones[myTarget] = null
+                        duelist.graveyard.add(destroyed.card)
+                        if (destroyed.card.name == "Toon World") {
+                            checkToonWorldDestruction(duelist)
+                        }
+                        log("🌪️ MYSTICAL SPACE TYPHOON: Destroyed [${destroyed.card.name}] in Zone ${myTarget + 1}!")
+                    } else {
+                        log("Mystical Space Typhoon resolved: No other Spell/Trap cards on the field to destroy.")
+                    }
+                }
+            }
         }
     }
 
@@ -2000,7 +2260,10 @@ class DuelEngine {
     fun nextPhase() {
         if (winner != null) return
         when (currentPhase) {
-            DuelPhase.DRAW_PHASE -> currentPhase = DuelPhase.STANDBY_PHASE
+            DuelPhase.DRAW_PHASE -> {
+                currentPhase = DuelPhase.STANDBY_PHASE
+                handleStandbyPhaseUpkeep()
+            }
             DuelPhase.STANDBY_PHASE -> currentPhase = DuelPhase.MAIN_PHASE_1
             DuelPhase.MAIN_PHASE_1 -> currentPhase = DuelPhase.BATTLE_PHASE
             DuelPhase.BATTLE_PHASE -> currentPhase = DuelPhase.MAIN_PHASE_2
@@ -2451,6 +2714,25 @@ class DuelEngine {
             log("DUEL OVER: ${player.name} WINS! Defeated ${opponent.name}!")
             if (drop != null) {
                 log("🎁 WON CARD REWARD: [${drop.name}] added to Trunk!")
+            }
+        }
+
+        if (isMatchDuel && winner != null) {
+            if (winner == player.name) {
+                playerMatchWins++
+            } else if (winner == opponent.name) {
+                opponentMatchWins++
+            }
+            if (playerMatchWins >= 2) {
+                isMatchFinished = true
+                matchWinner = player
+                log("🏆 MATCH VICTORY! ${player.name} won the Best-of-3 Match ($playerMatchWins - $opponentMatchWins)!")
+            } else if (opponentMatchWins >= 2) {
+                isMatchFinished = true
+                matchWinner = opponent
+                log("💀 MATCH DEFEAT! ${opponent.name} won the Best-of-3 Match ($opponentMatchWins - $playerMatchWins)!")
+            } else {
+                log("⚔️ MATCH UPDATE: Game $matchGameNumber finished! (Score: ${player.name} $playerMatchWins - ${opponent.name} $opponentMatchWins). Side decking enabled before Game ${matchGameNumber + 1}.")
             }
         }
     }

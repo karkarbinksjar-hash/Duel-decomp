@@ -1858,5 +1858,204 @@ class DuelEngineTest {
         assertTrue("Opponent monster zones empty", testEngine.opponent.monsterZones.all { it == null })
         assertTrue("Torrential Tribute in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Torrential Tribute" })
     }
+
+    @Test
+    fun testDelinquentDuoDiscardsTwoCardsWithLpCost() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.DELINQUENT_DUO))
+
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.ARMORED_LIZARD))
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.BEAN_SOLDIER))
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.BIG_INSECT))
+
+        val playerLpBefore = testEngine.player.lifePoints
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Delinquent Duo activated", activated)
+        assertEquals("Player paid 1000 LP", playerLpBefore - 1000, testEngine.player.lifePoints)
+        assertEquals("Opponent hand reduced by 2 cards", 1, testEngine.opponent.hand.size)
+        assertEquals("Opponent GY received 2 discarded cards", 2, testEngine.opponent.graveyard.size)
+    }
+
+    @Test
+    fun testTheForcefulSentryReturnsHandCardToDeck() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.THE_FORCEFUL_SENTRY))
+
+        testEngine.opponent.hand.clear()
+        val bossMonster = Card(id = 89631139, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
+        testEngine.opponent.hand.add(DuelCard(card = bossMonster))
+        val oppDeckCountBefore = testEngine.opponent.deck.size
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("The Forceful Sentry activated", activated)
+        assertEquals("Opponent hand empty", 0, testEngine.opponent.hand.size)
+        assertEquals("Card returned to opponent deck", oppDeckCountBefore + 1, testEngine.opponent.deck.size)
+        assertTrue("Boss monster returned to deck", testEngine.opponent.deck.any { it.name == "Blue-Eyes White Dragon" })
+    }
+
+    @Test
+    fun testConfiscationDiscardsOpponentCardWith1000LpCost() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.CONFISCATION))
+
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.ARMORED_LIZARD))
+
+        val playerLpBefore = testEngine.player.lifePoints
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Confiscation activated", activated)
+        assertEquals("Player paid 1000 LP", playerLpBefore - 1000, testEngine.player.lifePoints)
+        assertEquals("Opponent hand empty", 0, testEngine.opponent.hand.size)
+        assertTrue("Armored Lizard discarded to GY", testEngine.opponent.graveyard.any { it.name == "Armored Lizard" })
+    }
+
+    @Test
+    fun testCardDestructionDiscardsAndRedraws() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.CARD_DESTRUCTION))
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.ARMORED_LIZARD))
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.BEAN_SOLDIER))
+
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.BIG_INSECT))
+        testEngine.opponent.hand.add(DuelCard(card = GbaCardCatalog.CYBER_FALCON))
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Card Destruction activated", activated)
+        // Player hand had 2 remaining cards when Card Destruction resolved -> player draws 2 cards
+        assertEquals("Player drew 2 new cards", 2, testEngine.player.hand.size)
+        // Opponent had 2 cards -> opponent draws 2 cards
+        assertEquals("Opponent drew 2 new cards", 2, testEngine.opponent.hand.size)
+        assertTrue("Player discarded cards in GY", testEngine.player.graveyard.any { it.name == "Armored Lizard" })
+        assertTrue("Opponent discarded cards in GY", testEngine.opponent.graveyard.any { it.name == "Big Insect" })
+    }
+
+    @Test
+    fun testNoblemanOfCrossoutBanishesFaceDownAndExilesFlipCopiesFromDeck() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent controls face-down Man-Eater Bug (Flip Effect)
+        testEngine.opponent.monsterZones[0] = DuelCard(
+            card = GbaCardCatalog.MAN_EATER_BUG,
+            position = CardPosition.FACE_DOWN_DEFENSE
+        )
+
+        // Seed decks with copies of Man-Eater Bug
+        testEngine.opponent.deck.add(GbaCardCatalog.MAN_EATER_BUG)
+        testEngine.player.deck.add(GbaCardCatalog.MAN_EATER_BUG)
+
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.NOBLEMAN_OF_CROSSOUT))
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Nobleman of Crossout activated", activated)
+        assertNull("Field monster destroyed", testEngine.opponent.monsterZones[0])
+        assertTrue("Field monster banished", testEngine.opponent.banishedZone.any { it.name == "Man-Eater Bug" })
+        assertFalse("Field monster NOT in graveyard", testEngine.opponent.graveyard.any { it.name == "Man-Eater Bug" })
+
+        // Copies banished from both decks
+        assertFalse("Opponent deck stripped of Man-Eater Bug copies", testEngine.opponent.deck.any { it.name == "Man-Eater Bug" })
+        assertFalse("Player deck stripped of Man-Eater Bug copies", testEngine.player.deck.any { it.name == "Man-Eater Bug" })
+        assertTrue("Player banished zone received exiled deck copies", testEngine.player.banishedZone.any { it.name == "Man-Eater Bug" })
+    }
+
+    @Test
+    fun testMysticalSpaceTyphoonDestroysSpellTrap() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent controls Swords of Revealing Light
+        testEngine.opponent.spellTrapZones[0] = DuelCard(
+            card = GbaCardCatalog.SWORDS_OF_REVEALING_LIGHT,
+            position = CardPosition.FACE_UP_SPELL_TRAP
+        )
+
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.MYSTICAL_SPACE_TYPHOON))
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("MST activated", activated)
+        assertNull("Swords destroyed from zone 0", testEngine.opponent.spellTrapZones[0])
+        assertTrue("Swords placed into opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Swords of Revealing Light" })
+    }
+
+    @Test
+    fun testImperialOrderStandbyMaintenanceCost() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player controls Imperial Order face-up
+        testEngine.player.spellTrapZones[0] = DuelCard(
+            card = GbaCardCatalog.IMPERIAL_ORDER,
+            position = CardPosition.FACE_UP_SPELL_TRAP
+        )
+
+        val playerLpBefore = testEngine.player.lifePoints
+        testEngine.handleStandbyPhaseUpkeep()
+        assertEquals("Player paid 700 LP maintenance cost", playerLpBefore - 700, testEngine.player.lifePoints)
+        assertNotNull("Imperial Order survives when LP paid", testEngine.player.spellTrapZones[0])
+
+        // When LP is low (e.g. 500 LP), cannot pay 700 LP -> destroyed
+        testEngine.player.lifePoints = 500
+        testEngine.handleStandbyPhaseUpkeep()
+        assertNull("Imperial Order destroyed when maintenance cost cannot be paid", testEngine.player.spellTrapZones[0])
+        assertTrue("Imperial Order sent to graveyard", testEngine.player.graveyard.any { it.name == "Imperial Order" })
+    }
+
+    @Test
+    fun testBestOfThreeMatchDuelProgressionAndSideDeckSwapping() {
+        val testEngine = DuelEngine()
+        testEngine.startMatchDuel("Joey Wheeler")
+
+        assertTrue("Duel is Best-of-3 Match", testEngine.isMatchDuel)
+        assertEquals("Starting at Game 1", 1, testEngine.matchGameNumber)
+        assertEquals("Initial player score 0", 0, testEngine.playerMatchWins)
+        assertEquals("Initial opponent score 0", 0, testEngine.opponentMatchWins)
+        assertFalse("Match not finished", testEngine.isMatchFinished)
+
+        // Player wins Game 1
+        testEngine.opponent.lifePoints = 0
+        testEngine.surrender(isPlayer = false)
+        assertEquals("Player score is 1 after Game 1", 1, testEngine.playerMatchWins)
+        assertFalse("Match not finished after Game 1", testEngine.isMatchFinished)
+
+        // Swap a card from main deck with side deck between games
+        val oldCardName = testEngine.player.deck[0].name
+        val sideCardName = testEngine.player.sideDeck[0].name
+        val swapped = testEngine.swapSideDeckCard(isPlayer = true, mainDeckCardIndex = 0, sideDeckCardIndex = 0)
+        assertTrue("Side deck card swap succeeded", swapped)
+        assertEquals("Side card is now in main deck", sideCardName, testEngine.player.deck[0].name)
+        assertEquals("Old main card is now in side deck", oldCardName, testEngine.player.sideDeck[0].name)
+
+        // Advance to Game 2
+        val advanced = testEngine.advanceMatchGame()
+        assertTrue("Advanced to Game 2", advanced)
+        assertEquals("Now at Game 2", 2, testEngine.matchGameNumber)
+        assertNull("Winner reset for Game 2", testEngine.winner)
+        assertEquals("Player LP reset to 8000", 8000, testEngine.player.lifePoints)
+        assertEquals("Opponent LP reset to 8000", 8000, testEngine.opponent.lifePoints)
+        assertEquals("Player hand drawn for Game 2", 5, testEngine.player.hand.size)
+
+        // Player wins Game 2 -> Wins the entire Match!
+        testEngine.opponent.lifePoints = 0
+        testEngine.surrender(isPlayer = false)
+        assertEquals("Player score is 2", 2, testEngine.playerMatchWins)
+        assertTrue("Match is finished (2 wins reached)", testEngine.isMatchFinished)
+        assertEquals("Player is match winner", testEngine.player, testEngine.matchWinner)
+    }
 }
 
