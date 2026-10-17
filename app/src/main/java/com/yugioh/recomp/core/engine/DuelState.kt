@@ -55,6 +55,13 @@ enum class DuelPhase(val displayName: String, val shortName: String) {
     END_PHASE("End Phase", "EP")
 }
 
+enum class DuelSpeed(val label: String, val shortLabel: String, val multiplier: Float) {
+    SLOW("Slow (0.5x)", "0.5x", 1.5f),
+    NORMAL("Normal (1.0x)", "1.0x", 1.0f),
+    FAST("Fast (1.75x)", "1.75x", 0.57f),
+    TURBO("Turbo (3.0x)", "3.0x", 0.33f)
+}
+
 data class ClashState(
     val attackerCard: Card,
     val defenderCard: Card?,

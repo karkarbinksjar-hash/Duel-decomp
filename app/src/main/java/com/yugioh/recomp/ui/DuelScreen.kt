@@ -80,7 +80,7 @@ fun DuelScreen(
     val isGba = RomAssetCache.activeTarget?.platform == RomPlatform.GBA
     var isMenuOpen by remember { mutableStateOf(false) }
     var isSfxEnabled by remember { mutableStateOf(true) }
-    var isFastAiEnabled by remember { mutableStateOf(false) }
+    var duelSpeed by remember { mutableStateOf(DuelSpeed.NORMAL) }
 
     BackHandler(enabled = true) {
         isMenuOpen = !isMenuOpen
@@ -190,7 +190,7 @@ fun DuelScreen(
             engine.dismissClash()
             refresh()
 
-            val speedMul = if (isFastAiEnabled) 0.5f else 1.0f
+            val speedMul = duelSpeed.multiplier
             val steps = engine.planAiTurnSteps()
             for (step in steps) {
                 if (engine.winner != null) break
@@ -202,16 +202,16 @@ fun DuelScreen(
                         aiAnnouncementText = step.announcement
                         engine.executeAiStep(step)
                         refresh()
-                        delay((750 * speedMul).toLong())
+                        delay((1500 * speedMul).toLong())
                     }
                     is AiTurnStep.Draw -> {
                         aiStepType = "DRAW"
-                        aiFeaturedCard = step.card
+                        aiFeaturedCard = null
                         aiAnnouncementText = step.announcement
                         playSfx("draw")
                         engine.executeAiStep(step)
                         refresh()
-                        delay((850 * speedMul).toLong())
+                        delay((1700 * speedMul).toLong())
                     }
                     is AiTurnStep.ActivateSpell -> {
                         aiStepType = "SPELL"
@@ -220,26 +220,26 @@ fun DuelScreen(
                         playSfx("summon")
                         engine.executeAiStep(step)
                         refresh()
-                        delay((1200 * speedMul).toLong())
+                        delay((2400 * speedMul).toLong())
                     }
                     is AiTurnStep.SetTrap -> {
-                        aiStepType = "TRAP"
-                        aiFeaturedCard = step.card
-                        aiAnnouncementText = step.announcement
+                        aiStepType = "SET"
+                        aiFeaturedCard = null
+                        aiAnnouncementText = "${engine.opponent.name} set a card face-down in Spell & Trap Zone."
                         playSfx("summon")
                         engine.executeAiStep(step)
                         refresh()
-                        delay((900 * speedMul).toLong())
+                        delay((1800 * speedMul).toLong())
                     }
                     is AiTurnStep.SummonMonster -> {
-                        aiStepType = "SUMMON"
-                        aiFeaturedCard = step.card
-                        aiAnnouncementText = step.announcement
+                        aiStepType = if (step.isDefense) "SET" else "SUMMON"
+                        aiFeaturedCard = if (step.isDefense) null else step.card
+                        aiAnnouncementText = if (step.isDefense) "${engine.opponent.name} set a monster face-down in Defense." else step.announcement
                         playSfx("summon")
                         animatingSummonSlot = Pair(false, step.slotIndex)
                         engine.executeAiStep(step)
                         refresh()
-                        delay((1100 * speedMul).toLong())
+                        delay((2200 * speedMul).toLong())
                         animatingSummonSlot = null
                     }
                     is AiTurnStep.DeclareAttack -> {
@@ -254,7 +254,7 @@ fun DuelScreen(
                             isDirect = step.isDirect
                         )
                         playSfx(if (step.isDirect) "direct" else "attack")
-                        delay(250)
+                        delay((400 * speedMul).toLong())
                         triggerScreenShake(if (step.isDirect) 16f else 12f)
                         val defenderSlot = step.defenderSlot
                         val prevDefender = defenderSlot?.let { engine.player.monsterZones[it] }
@@ -275,11 +275,12 @@ fun DuelScreen(
                         if (step.predictedDamage > 0) {
                             playerFloatingDamage = step.predictedDamage
                         }
-                        delay(350)
+                        delay((700 * speedMul).toLong())
                         lungingMonsterSlot = null
-                        delay(500)
+                        delay((700 * speedMul).toLong())
                         cardDestructionSlot = null
                         activeAttackRay = null
+                        delay((1000 * speedMul).toLong())
                         playerFloatingDamage = null
                     }
                     is AiTurnStep.EndTurn -> {
@@ -288,7 +289,7 @@ fun DuelScreen(
                         aiAnnouncementText = step.announcement
                         engine.executeAiStep(step)
                         refresh()
-                        delay(800)
+                        delay((1400 * speedMul).toLong())
                     }
                 }
             }
@@ -309,7 +310,10 @@ fun DuelScreen(
     val activeHudCard: Card? = selectedFieldCard
         ?: selectedCard
         ?: selectedPlayerMonsterSlot?.let { engine.player.monsterZones[it]?.card }
-        ?: selectedOpponentSlot?.let { engine.opponent.monsterZones[it]?.card }
+        ?: selectedOpponentSlot?.let {
+            val m = engine.opponent.monsterZones[it]
+            if (m != null && !m.position.isFaceDown) m.card else null
+        }
         ?: engine.player.hand.firstOrNull()?.card
         ?: engine.player.monsterZones.firstOrNull { it != null }?.card
 
@@ -455,9 +459,12 @@ fun DuelScreen(
                 },
                 onSelectOpponentSlot = { slot: Int ->
                     selectedOpponentSlot = slot
-                    engine.opponent.monsterZones[slot]?.card?.let { card ->
-                        selectedFieldCard = card
+                    val m = engine.opponent.monsterZones[slot]
+                    if (m != null && !m.position.isFaceDown) {
+                        selectedFieldCard = m.card
                         selectedCardHandIndex = null
+                    } else {
+                        selectedFieldCard = null
                     }
                 },
                 onOpenGraveyard = {
@@ -676,8 +683,8 @@ fun DuelScreen(
                     isShaderEnabled = !isShaderEnabled
                     DdsCampaignManager.isGbcLcdShaderEnabled = isShaderEnabled
                 },
-                isFastAiEnabled = isFastAiEnabled,
-                onToggleFastAi = { isFastAiEnabled = !isFastAiEnabled },
+                currentSpeed = duelSpeed,
+                onSelectSpeed = { duelSpeed = it },
                 onResume = { isMenuOpen = false },
                 onRestart = {
                     val oppName = if (isGba) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName
@@ -1043,9 +1050,13 @@ private fun OpponentSection(
                         isDestructionAnimating = isDestructionAnim,
                         onClick = {
                             if (mCard != null) {
-                                onSelectOpponentSlot(slot)
-                                if (isTargetable) onOpponentMonsterClick(slot)
-                                else if (!mCard.position.isFaceDown) onInspectCard(mCard.card)
+                                if (!mCard.position.isFaceDown) {
+                                    onSelectOpponentSlot(slot)
+                                    if (isTargetable) onOpponentMonsterClick(slot)
+                                    else onInspectCard(mCard.card)
+                                } else {
+                                    if (isTargetable) onOpponentMonsterClick(slot)
+                                }
                             } else if (canDirectAttack) {
                                 onDirectAttack()
                             }
@@ -2450,6 +2461,38 @@ private fun AiActionAnnouncementOverlay(
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                    }
+                }
+            } else if (stepType == "SET") {
+                Spacer(modifier = Modifier.height(4.dp))
+                val cardBackBitmap = BitmapUtils.spriteToImageBitmap(RomAssetCache.getCardBack())
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Image(
+                        bitmap = cardBackBitmap,
+                        contentDescription = "Face-Down Card",
+                        modifier = Modifier
+                            .width(26.dp)
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .border(1.dp, Color(0xFF64748B), RoundedCornerShape(3.dp))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Face-Down Card",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "[Hidden on Field]",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
                     }
                 }
             }
