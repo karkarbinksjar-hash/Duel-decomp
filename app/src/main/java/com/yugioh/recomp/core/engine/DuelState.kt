@@ -85,6 +85,8 @@ class Duelist(
     val extraDeck: MutableList<Card> = mutableListOf(),
     val monsterZones: Array<DuelCard?> = arrayOfNulls(5),
     val spellTrapZones: Array<DuelCard?> = arrayOfNulls(5),
+    val banishedZone: MutableList<Card> = mutableListOf(),
+    val sideDeck: MutableList<Card> = mutableListOf(),
     var swordsTurnsRemaining: Int = 0,
     var isWabokuActive: Boolean = false,
     val temporaryAtkBuffs: MutableMap<Int, Int> = mutableMapOf()

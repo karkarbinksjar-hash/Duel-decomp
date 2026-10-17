@@ -1427,6 +1427,71 @@ object GbaCardCatalog {
         password = "00126218"
     )
 
+    val DELINQUENT_DUO = Card(
+        id = 916,
+        name = "Delinquent Duo",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        description = "Pay 1000 Life Points. Your opponent discards 1 random card from their hand, and then discards 1 more card of their choice.",
+        password = "44763025"
+    )
+
+    val THE_FORCEFUL_SENTRY = Card(
+        id = 917,
+        name = "The Forceful Sentry",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        description = "Look at your opponent's hand. Select 1 card among them and return it to their Deck. The Deck is then shuffled.",
+        password = "42829885"
+    )
+
+    val CONFISCATION = Card(
+        id = 918,
+        name = "Confiscation",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        description = "Pay 1000 Life Points. Look at your opponent's hand, select 1 card among them, and discard it to the Graveyard.",
+        password = "17375649"
+    )
+
+    val CARD_DESTRUCTION = Card(
+        id = 919,
+        name = "Card Destruction",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        description = "Both players discard their entire hands to the Graveyard and draw the same number of cards they discarded.",
+        password = "72892473"
+    )
+
+    val NOBLEMAN_OF_CROSSOUT = Card(
+        id = 920,
+        name = "Nobleman of Crossout",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        description = "Target 1 face-down monster on the field; destroy that target, and if you do, banish it. If it was a Flip monster, each player reveals their Main Deck, then banishes all cards with that monster's name from their Main Deck.",
+        password = "71044499"
+    )
+
     val ALL_GBA_CARDS = listOf(
         JINZO,
         BUSTER_BLADER,
@@ -1536,7 +1601,12 @@ object GbaCardCatalog {
         TIME_WIZARD_GBA,
         WABOKU_GBA,
         DIAN_KETO_GBA,
-        SKULL_DICE
+        SKULL_DICE,
+        DELINQUENT_DUO,
+        THE_FORCEFUL_SENTRY,
+        CONFISCATION,
+        CARD_DESTRUCTION,
+        NOBLEMAN_OF_CROSSOUT
     )
 
     fun getCardByName(name: String): Card? = ALL_GBA_CARDS.find { it.name.equals(name, ignoreCase = true) }

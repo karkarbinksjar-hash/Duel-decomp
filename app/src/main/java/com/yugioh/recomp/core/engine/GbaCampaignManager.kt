@@ -307,6 +307,8 @@ object GbaCampaignManager {
         )
     )
 
+    val activeSideDeck = mutableListOf<Card>()
+
     init {
         resetToNewGame()
     }
@@ -318,6 +320,8 @@ object GbaCampaignManager {
         currentStarterDeckType = StarterDeckType.BLACK
         activeDeck.clear()
         activeDeck.addAll(getBlackStarterDeck())
+        activeSideDeck.clear()
+        activeSideDeck.addAll(getStarterSideDeck())
         trunk.clear()
         trunk.addAll(getGbaStarterTrunk())
         opponents.forEach { opponentWins[it.name] = 0 }
@@ -331,7 +335,27 @@ object GbaCampaignManager {
             StarterDeckType.RED -> activeDeck.addAll(getRedStarterDeck())
             StarterDeckType.GREEN -> activeDeck.addAll(getGreenStarterDeck())
         }
+        activeSideDeck.clear()
+        activeSideDeck.addAll(getStarterSideDeck())
     }
+
+    fun getStarterSideDeck(): List<Card> = listOf(
+        GbaCardCatalog.MYSTICAL_SPACE_TYPHOON,
+        GbaCardCatalog.WABOKU_GBA,
+        GbaCardCatalog.MAGIC_CYLINDER,
+        GbaCardCatalog.DIAN_KETO_GBA,
+        GbaCardCatalog.TRAP_HOLE,
+        GbaCardCatalog.SEVEN_TOOLS_BANDIT,
+        GbaCardCatalog.MAGIC_JAMMER,
+        GbaCardCatalog.SKELENGEL,
+        GbaCardCatalog.AQUA_MADOOR,
+        GbaCardCatalog.BIG_EYE,
+        GbaCardCatalog.CYBER_FALCON,
+        GbaCardCatalog.FERAL_IMP,
+        GbaCardCatalog.DARK_GRAY,
+        GbaCardCatalog.BEAVER_WARRIOR,
+        GbaCardCatalog.SKULL_DICE
+    )
 
     fun getGbaStarterDeck(): List<Card> = getBlackStarterDeck()
 
