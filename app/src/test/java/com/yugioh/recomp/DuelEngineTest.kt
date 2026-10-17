@@ -1031,4 +1031,120 @@ class DuelEngineTest {
         // 3 monsters * 500 = 1500 damage
         assertEquals("Opponent should take 1500 damage", initialOppLp - 1500, testEngine.opponent.lifePoints)
     }
+
+    @Test
+    fun testTributeSummonWithSpecificSlots() {
+        val testEngine = DuelEngine()
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            ByteArray(100)
+        )
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player has 2 monsters: Celtic Guardian in Zone 0, Kuriboh in Zone 1
+        val celticGuardian = Card(id = 24, name = "Celtic Guardian", atk = 1400, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR)
+        val kuriboh = Card(id = 5, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND)
+        testEngine.player.monsterZones[0] = DuelCard(card = celticGuardian, position = CardPosition.FACE_UP_ATTACK)
+        testEngine.player.monsterZones[1] = DuelCard(card = kuriboh, position = CardPosition.FACE_UP_ATTACK)
+
+        // Hand has Summoned Skull (Level 6, 1 tribute)
+        val summonedSkull = Card(id = 35, name = "Summoned Skull", atk = 2500, def = 1200, level = 6, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND)
+        testEngine.player.hand.add(DuelCard(card = summonedSkull))
+        val handIdx = testEngine.player.hand.size - 1
+
+        // Tribute Kuriboh specifically (Zone 1) and summon Summoned Skull into Zone 1
+        val success = testEngine.summonMonster(
+            isPlayer = true,
+            handIndex = handIdx,
+            slotIndex = 1,
+            tributeSlots = listOf(1),
+            setDefense = false
+        )
+        assertTrue("Tribute summon should succeed", success)
+        assertNotNull("Celtic Guardian in Zone 0 should still be intact", testEngine.player.monsterZones[0])
+        assertEquals("Celtic Guardian", testEngine.player.monsterZones[0]?.card?.name)
+        assertNotNull("Summoned Skull should be in Zone 1", testEngine.player.monsterZones[1])
+        assertEquals("Summoned Skull", testEngine.player.monsterZones[1]?.card?.name)
+        assertTrue("Kuriboh should be in Graveyard", testEngine.player.graveyard.any { it.name == "Kuriboh" })
+    }
+
+    @Test
+    fun testTributeSummonFailsWhenInsufficientTributes() {
+        val testEngine = DuelEngine()
+        com.yugioh.recomp.core.rom.RomAssetCache.populateFromRom(
+            com.yugioh.recomp.core.rom.RomTarget.ETERNAL_DUELIST_SOUL_USA,
+            ByteArray(100)
+        )
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player has only 1 monster on field
+        val kuriboh = Card(id = 5, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND)
+        testEngine.player.monsterZones[0] = DuelCard(card = kuriboh, position = CardPosition.FACE_UP_ATTACK)
+
+        // Dark Magician needs 2 tributes (Level 7)
+        val darkMagician = Card(id = 14, name = "Dark Magician", atk = 2500, def = 2100, level = 7, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.SPELLCASTER)
+        testEngine.player.hand.add(DuelCard(card = darkMagician))
+        val handIdx = testEngine.player.hand.size - 1
+
+        val (canSummon, reason) = testEngine.canSummon(isPlayer = true, darkMagician)
+        assertFalse("Cannot summon 2-tribute monster with only 1 monster", canSummon)
+        assertTrue("Reason should mention tributes required", reason.contains("Requires 2 Tribute(s)"))
+
+        val summoned = testEngine.summonMonster(isPlayer = true, handIndex = handIdx, slotIndex = 0)
+        assertFalse("Summon should fail", summoned)
+        assertNotNull("Kuriboh should not have been tributed", testEngine.player.monsterZones[0])
+    }
+
+    @Test
+    fun testSequentialDirectAttacks() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent has 0 monsters
+        for (i in 0 until 5) testEngine.opponent.monsterZones[i] = null
+        val initialLp = testEngine.opponent.lifePoints
+
+        // Player has 2 monsters in Attack position
+        val mon1 = Card(id = 1, name = "Mon1", atk = 1500, def = 1000, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR)
+        val mon2 = Card(id = 2, name = "Mon2", atk = 1800, def = 1000, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR)
+        testEngine.player.monsterZones[0] = DuelCard(card = mon1, position = CardPosition.FACE_UP_ATTACK)
+        testEngine.player.monsterZones[1] = DuelCard(card = mon2, position = CardPosition.FACE_UP_ATTACK)
+
+        testEngine.nextPhase() // BATTLE_PHASE
+
+        // First direct attack
+        assertTrue("Mon1 attacks directly", testEngine.declareAttack(attackerSlot = 0, targetSlot = null))
+        assertEquals("Opponent takes 1500 damage", initialLp - 1500, testEngine.opponent.lifePoints)
+        assertFalse("Mon1 cannot attack again", testEngine.player.monsterZones[0]!!.canDeclareAttack)
+        assertTrue("Mon2 is still eligible to attack", testEngine.player.monsterZones[1]!!.canDeclareAttack)
+
+        // Dismiss clash / second direct attack in same phase
+        testEngine.dismissClash()
+        assertTrue("Mon2 attacks directly", testEngine.declareAttack(attackerSlot = 1, targetSlot = null))
+        assertEquals("Opponent takes additional 1800 damage", initialLp - 1500 - 1800, testEngine.opponent.lifePoints)
+        assertFalse("Mon2 cannot attack again", testEngine.player.monsterZones[1]!!.canDeclareAttack)
+    }
+
+    @Test
+    fun testTrapHoleRecordsTriggerStateAndDestroysMonster() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent has set Trap Hole
+        val trapHole = Card(id = 160, name = "Trap Hole", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP, monsterType = MonsterType.NONE)
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = trapHole, position = CardPosition.SET_SPELL_TRAP)
+
+        // Player summons monster with ATK >= 1000 (Vorse Raider, 1900 ATK)
+        val vorseRaider = Card(id = 10, name = "Vorse Raider", atk = 1900, def = 1200, level = 4, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.BEAST_WARRIOR)
+        testEngine.player.hand.add(DuelCard(card = vorseRaider))
+        val handIdx = testEngine.player.hand.size - 1
+
+        assertTrue("Summon executed", testEngine.summonMonster(isPlayer = true, handIndex = handIdx, slotIndex = 0, setDefense = false))
+
+        // Monster should be destroyed by Trap Hole and trigger recorded
+        assertNull("Vorse Raider should be destroyed by Trap Hole", testEngine.player.monsterZones[0])
+        assertEquals("Trap Hole trigger recorded", Pair("Trap Hole", 0), testEngine.lastTriggeredTrap)
+        assertTrue("Vorse Raider should be in Graveyard", testEngine.player.graveyard.any { it.name == "Vorse Raider" })
+        assertTrue("Trap Hole should be in opponent Graveyard", testEngine.opponent.graveyard.any { it.name == "Trap Hole" })
+    }
 }

@@ -35,6 +35,8 @@ class DuelEngine {
 
     var clashState: ClashState? = null
 
+    var lastTriggeredTrap: Pair<String, Int>? = null
+
     var lastRewardCard: Card? = null
         private set
 
@@ -111,6 +113,7 @@ class DuelEngine {
         activeFieldSpell = null
         winner = null
         clashState = null
+        lastTriggeredTrap = null
         lastRewardCard = null
         _combatLogs.clear()
 
@@ -503,6 +506,7 @@ class DuelEngine {
             trapOwner.graveyard.add(trapCard)
             summoningDuelist.monsterZones[summonedSlot] = null
             summoningDuelist.graveyard.add(summonedMonster.card)
+            lastTriggeredTrap = Pair("Trap Hole", summonedSlot)
             log("TRAP TRIGGER: ${trapOwner.name} activated [Trap Hole]! [${summonedMonster.card.name}] was destroyed!")
         }
     }
@@ -785,6 +789,7 @@ class DuelEngine {
                 if (oppTarget != null) {
                     val m = opp.monsterZones[oppTarget]!!
                     m.hasAttackedThisTurn = true
+                    m.attacksDeclaredThisTurn = m.maxAttacksPerTurn
                     m.canChangePosition = false
                     log("🕸️ [Spellbinding Circle] binds [${m.card.name}]! Cannot attack or change position.")
                 }
@@ -1194,6 +1199,7 @@ class DuelEngine {
         isPlayerTurn = !isPlayerTurn
         hasNormalSummonedThisTurn = false
         clashState = null
+        lastTriggeredTrap = null
 
         val nextDuelist = if (isPlayerTurn) player else opponent
         nextDuelist.resetTurnActions()

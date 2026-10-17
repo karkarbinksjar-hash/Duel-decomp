@@ -44,6 +44,14 @@ data class AttackRayState(
     val isDirect: Boolean
 )
 
+data class TributePromptState(
+    val handIndex: Int,
+    val card: Card,
+    val tributesNeeded: Int,
+    val isDefense: Boolean,
+    val preSelectedSlot: Int? = null
+)
+
 fun getDuelistThemeColor(name: String): Pair<Color, Color> {
     return when {
         name.contains("Kaiba", ignoreCase = true) -> Pair(Color(0xFF1D4ED8), Color(0xFF38BDF8))
@@ -98,6 +106,7 @@ fun DuelScreen(
     var inspectingCard by remember { mutableStateOf<Card?>(null) }
     var viewingGraveyardTitle by remember { mutableStateOf<String?>(null) }
     var viewingGraveyardCards by remember { mutableStateOf<List<Card>?>(null) }
+    var tributePromptState by remember { mutableStateOf<TributePromptState?>(null) }
 
     // Animations & Sequencer States
     var isAiExecuting by remember { mutableStateOf(false) }
@@ -165,6 +174,25 @@ fun DuelScreen(
         }
     }
 
+    fun checkPostSummonTraps(summonedSlot: Int) {
+        val trap = engine.lastTriggeredTrap
+        if (trap != null) {
+            val (trapName, slot) = trap
+            engine.lastTriggeredTrap = null
+            coroutineScope.launch {
+                delay(250)
+                phaseBannerText = "⚠️ TRAP TRIGGER: [${trapName}]!"
+                cardDestructionSlot = Pair(true, slot)
+                playSfx("destroy")
+                triggerScreenShake(18f)
+                delay(1300)
+                cardDestructionSlot = null
+                phaseBannerText = null
+                refresh()
+            }
+        }
+    }
+
     fun autoTargetNextAttacker() {
         if (engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && engine.opponent.activeMonstersCount() == 0) {
             val readySlot = engine.player.monsterZones.indices.firstOrNull { idx: Int ->
@@ -175,9 +203,14 @@ fun DuelScreen(
         } else if (selectedPlayerMonsterSlot != null) {
             val m = engine.player.monsterZones.getOrNull(selectedPlayerMonsterSlot!!)
             if (m == null || m.position != CardPosition.FACE_UP_ATTACK || !m.canDeclareAttack) {
-                selectedPlayerMonsterSlot = null
+                val nextReady = engine.player.monsterZones.indices.firstOrNull { idx: Int ->
+                    val m2 = engine.player.monsterZones[idx]
+                    m2 != null && m2.position == CardPosition.FACE_UP_ATTACK && m2.canDeclareAttack
+                }
+                selectedPlayerMonsterSlot = nextReady
             }
         }
+        refresh()
     }
 
     fun executeAiTurnSequence() {
@@ -319,25 +352,67 @@ fun DuelScreen(
 
     val selectedAttackerMonster = selectedPlayerMonsterSlot?.let { engine.player.monsterZones.getOrNull(it) }
     val selectedAttacker = selectedAttackerMonster?.card
+    val hasReadyAttacker = engine.player.monsterZones.any { it != null && it.position == CardPosition.FACE_UP_ATTACK && it.canDeclareAttack }
     val canDirectAttack = !isAiExecuting &&
         engine.isPlayerTurn &&
         engine.currentPhase == DuelPhase.BATTLE_PHASE &&
-        selectedPlayerMonsterSlot != null &&
-        selectedAttackerMonster != null &&
-        selectedAttackerMonster.position == CardPosition.FACE_UP_ATTACK &&
-        selectedAttackerMonster.canDeclareAttack &&
+        hasReadyAttacker &&
         engine.opponent.activeMonstersCount() == 0
 
     fun executePlayerAttack(targetSlot: Int?) {
         if (isAiExecuting || !engine.isPlayerTurn || engine.currentPhase != DuelPhase.BATTLE_PHASE) return
-        val playerSlot = selectedPlayerMonsterSlot ?: return
+
+        // Auto-select strongest ready attacker if direct attack is called with no selection
+        if (selectedPlayerMonsterSlot == null && targetSlot == null) {
+            val readySlot = engine.player.monsterZones.indices
+                .filter { idx ->
+                    val m = engine.player.monsterZones[idx]
+                    m != null && m.position == CardPosition.FACE_UP_ATTACK && m.canDeclareAttack
+                }
+                .maxByOrNull { engine.player.monsterZones[it]!!.card.atk }
+            if (readySlot != null) {
+                selectedPlayerMonsterSlot = readySlot
+            }
+        }
+
+        val playerSlot = selectedPlayerMonsterSlot ?: run {
+            if (targetSlot == null && engine.opponent.activeMonstersCount() == 0) {
+                val hasMonsters = engine.player.activeMonstersCount() > 0
+                if (!hasMonsters) {
+                    coroutineScope.launch {
+                        phaseBannerText = "No monsters on field to attack!"
+                        delay(1200)
+                        phaseBannerText = null
+                    }
+                    engine.log("You have no monsters on the field to declare an attack.")
+                } else {
+                    coroutineScope.launch {
+                        phaseBannerText = "All monsters have already attacked this turn!"
+                        delay(1200)
+                        phaseBannerText = null
+                    }
+                    engine.log("All your monsters have already attacked or are in Defense position.")
+                }
+            }
+            return
+        }
         val attacker = engine.player.monsterZones.getOrNull(playerSlot) ?: return
 
         if (attacker.position != CardPosition.FACE_UP_ATTACK) {
+            coroutineScope.launch {
+                phaseBannerText = "Monsters in Defense cannot attack!"
+                delay(1200)
+                phaseBannerText = null
+            }
             engine.log("Monsters in Defense position cannot declare attacks.")
             return
         }
         if (!attacker.canDeclareAttack) {
+            coroutineScope.launch {
+                phaseBannerText = "${attacker.card.name} already attacked!"
+                delay(1200)
+                phaseBannerText = null
+            }
             engine.log("${attacker.card.name} has already declared its attack(s) this turn.")
             return
         }
@@ -395,7 +470,12 @@ fun DuelScreen(
             cardDestructionSlot = null
             activeAttackRay = null
             autoTargetNextAttacker()
-            delay(600)
+            if (isDirect) {
+                delay(500)
+                engine.dismissClash()
+                refresh()
+            }
+            delay(400)
             opponentFloatingDamage = null
         }
     }
@@ -513,19 +593,42 @@ fun DuelScreen(
                     if (!isAiExecuting) {
                         if (selectedCard != null && selectedCardHandIndex != null) {
                             if (selectedCard.isMonster) {
-                                playSfx("summon")
-                                animatingSummonSlot = Pair(true, slotIdx)
-                                engine.summonMonster(
-                                    isPlayer = true,
-                                    handIndex = selectedCardHandIndex!!,
-                                    slotIndex = slotIdx,
-                                    setDefense = false
-                                )
-                                selectedCardHandIndex = null
-                                refresh()
-                                coroutineScope.launch {
-                                    delay(900)
-                                    animatingSummonSlot = null
+                                if (isGba && selectedCard.level >= 5) {
+                                    val tributesNeeded = if (selectedCard.level >= 7) 2 else 1
+                                    val activeCount = engine.player.activeMonstersCount()
+                                    if (activeCount < tributesNeeded) {
+                                        coroutineScope.launch {
+                                            phaseBannerText = "⚠️ Need $tributesNeeded Tribute(s) on field!"
+                                            delay(1200)
+                                            phaseBannerText = null
+                                        }
+                                        engine.log("Cannot summon ${selectedCard.name}: Requires $tributesNeeded Tribute(s) on field ($activeCount available).")
+                                    } else {
+                                        val pre = if (engine.player.monsterZones[slotIdx] != null) slotIdx else null
+                                        tributePromptState = TributePromptState(
+                                            handIndex = selectedCardHandIndex!!,
+                                            card = selectedCard,
+                                            tributesNeeded = tributesNeeded,
+                                            isDefense = false,
+                                            preSelectedSlot = pre
+                                        )
+                                    }
+                                } else {
+                                    playSfx("summon")
+                                    animatingSummonSlot = Pair(true, slotIdx)
+                                    engine.summonMonster(
+                                        isPlayer = true,
+                                        handIndex = selectedCardHandIndex!!,
+                                        slotIndex = slotIdx,
+                                        setDefense = false
+                                    )
+                                    checkPostSummonTraps(slotIdx)
+                                    selectedCardHandIndex = null
+                                    refresh()
+                                    coroutineScope.launch {
+                                        delay(900)
+                                        animatingSummonSlot = null
+                                    }
                                 }
                             }
                         } else {
@@ -544,6 +647,7 @@ fun DuelScreen(
                                     }
                                 } else {
                                     engine.changeBattlePosition(isPlayer = true, slotIndex = slotIdx)
+                                    checkPostSummonTraps(slotIdx)
                                 }
                                 refresh()
                             }
@@ -593,6 +697,8 @@ fun DuelScreen(
                     currentPhase = engine.currentPhase,
                     isPlayerTurn = engine.isPlayerTurn && !isAiExecuting,
                     hasSummoned = engine.hasNormalSummonedThisTurn,
+                    isGba = isGba,
+                    playerActiveMonsters = engine.player.activeMonstersCount(),
                     onSelectHandCard = { idx ->
                         if (!isAiExecuting) {
                             selectedCardHandIndex = if (selectedCardHandIndex == idx) null else idx
@@ -603,29 +709,77 @@ fun DuelScreen(
                     },
                     onSummonAttack = {
                         selectedCardHandIndex?.let { idx ->
-                            val emptySlot = engine.player.firstEmptyMonsterSlot()
-                            playSfx("summon")
-                            if (emptySlot != -1) animatingSummonSlot = Pair(true, emptySlot)
-                            engine.summonMonster(isPlayer = true, handIndex = idx, slotIndex = emptySlot, setDefense = false)
-                            selectedCardHandIndex = null
-                            refresh()
-                            coroutineScope.launch {
-                                delay(900)
-                                animatingSummonSlot = null
+                            val card = engine.player.hand.getOrNull(idx)?.card
+                            if (card != null && card.isMonster) {
+                                if (isGba && card.level >= 5) {
+                                    val tributesNeeded = if (card.level >= 7) 2 else 1
+                                    val activeCount = engine.player.activeMonstersCount()
+                                    if (activeCount < tributesNeeded) {
+                                        coroutineScope.launch {
+                                            phaseBannerText = "⚠️ Need $tributesNeeded Tribute(s) on field!"
+                                            delay(1200)
+                                            phaseBannerText = null
+                                        }
+                                        engine.log("Cannot summon ${card.name}: Requires $tributesNeeded Tribute(s) on field ($activeCount available).")
+                                    } else {
+                                        tributePromptState = TributePromptState(
+                                            handIndex = idx,
+                                            card = card,
+                                            tributesNeeded = tributesNeeded,
+                                            isDefense = false
+                                        )
+                                    }
+                                } else {
+                                    val emptySlot = engine.player.firstEmptyMonsterSlot()
+                                    playSfx("summon")
+                                    if (emptySlot != -1) animatingSummonSlot = Pair(true, emptySlot)
+                                    engine.summonMonster(isPlayer = true, handIndex = idx, slotIndex = emptySlot, setDefense = false)
+                                    checkPostSummonTraps(emptySlot)
+                                    selectedCardHandIndex = null
+                                    refresh()
+                                    coroutineScope.launch {
+                                        delay(900)
+                                        animatingSummonSlot = null
+                                    }
+                                }
                             }
                         }
                     },
                     onSetDefense = {
                         selectedCardHandIndex?.let { idx ->
-                            val emptySlot = engine.player.firstEmptyMonsterSlot()
-                            playSfx("summon")
-                            if (emptySlot != -1) animatingSummonSlot = Pair(true, emptySlot)
-                            engine.summonMonster(isPlayer = true, handIndex = idx, slotIndex = emptySlot, setDefense = true)
-                            selectedCardHandIndex = null
-                            refresh()
-                            coroutineScope.launch {
-                                delay(900)
-                                animatingSummonSlot = null
+                            val card = engine.player.hand.getOrNull(idx)?.card
+                            if (card != null && card.isMonster) {
+                                if (isGba && card.level >= 5) {
+                                    val tributesNeeded = if (card.level >= 7) 2 else 1
+                                    val activeCount = engine.player.activeMonstersCount()
+                                    if (activeCount < tributesNeeded) {
+                                        coroutineScope.launch {
+                                            phaseBannerText = "⚠️ Need $tributesNeeded Tribute(s) on field!"
+                                            delay(1200)
+                                            phaseBannerText = null
+                                        }
+                                        engine.log("Cannot set ${card.name}: Requires $tributesNeeded Tribute(s) on field ($activeCount available).")
+                                    } else {
+                                        tributePromptState = TributePromptState(
+                                            handIndex = idx,
+                                            card = card,
+                                            tributesNeeded = tributesNeeded,
+                                            isDefense = true
+                                        )
+                                    }
+                                } else {
+                                    val emptySlot = engine.player.firstEmptyMonsterSlot()
+                                    playSfx("summon")
+                                    if (emptySlot != -1) animatingSummonSlot = Pair(true, emptySlot)
+                                    engine.summonMonster(isPlayer = true, handIndex = idx, slotIndex = emptySlot, setDefense = true)
+                                    checkPostSummonTraps(emptySlot)
+                                    selectedCardHandIndex = null
+                                    refresh()
+                                    coroutineScope.launch {
+                                        delay(900)
+                                        animatingSummonSlot = null
+                                    }
+                                }
                             }
                         }
                     },
@@ -737,6 +891,41 @@ fun DuelScreen(
                 cards = gyCards,
                 onCardClick = { card -> inspectingCard = card },
                 onDismiss = { viewingGraveyardCards = null }
+            )
+        }
+
+        tributePromptState?.let { prompt ->
+            val activeMonsters = engine.player.monsterZones.indices
+                .filter { engine.player.monsterZones[it] != null }
+                .map { Pair(it, engine.player.monsterZones[it]!!) }
+
+            TributeSelectionDialog(
+                cardToSummon = prompt.card,
+                tributesNeeded = prompt.tributesNeeded,
+                isDefense = prompt.isDefense,
+                playerMonsters = activeMonsters,
+                initialSelectedSlot = prompt.preSelectedSlot,
+                onConfirmTribute = { selectedSlots ->
+                    val primarySlot = selectedSlots.first()
+                    playSfx("summon")
+                    animatingSummonSlot = Pair(true, primarySlot)
+                    engine.summonMonster(
+                        isPlayer = true,
+                        handIndex = prompt.handIndex,
+                        slotIndex = primarySlot,
+                        tributeSlots = selectedSlots,
+                        setDefense = prompt.isDefense
+                    )
+                    checkPostSummonTraps(primarySlot)
+                    selectedCardHandIndex = null
+                    tributePromptState = null
+                    refresh()
+                    coroutineScope.launch {
+                        delay(900)
+                        animatingSummonSlot = null
+                    }
+                },
+                onDismiss = { tributePromptState = null }
             )
         }
 
@@ -1202,6 +1391,45 @@ private fun MiddleAnimationStage(
                         featuredCard = aiFeaturedCard,
                         opponentName = opponentName
                     )
+                } else if (canDirectAttack) {
+                    Button(
+                        onClick = onDirectAttack,
+                        colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                            .border(2.dp, MillenniumGold, RoundedCornerShape(8.dp))
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "⚔ DIRECT ATTACK! TAP TO STRIKE",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.5.sp
+                            )
+                            selectedAttacker?.let {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "(-${it.atk} LP)",
+                                    color = MillenniumGold,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                    if (clashState != null) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = clashState.resultSummary,
+                            color = MillenniumGold,
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 } else if (clashState != null) {
                     Surface(
                         color = Color(0xFF1A1C29),
@@ -1248,35 +1476,6 @@ private fun MiddleAnimationStage(
                                 fontSize = 8.sp,
                                 modifier = Modifier.padding(top = 2.dp)
                             )
-                        }
-                    }
-                } else if (canDirectAttack) {
-                    Button(
-                        onClick = onDirectAttack,
-                        colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
-                            .border(2.dp, MillenniumGold, RoundedCornerShape(8.dp))
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "⚔ DIRECT ATTACK! TAP TO STRIKE",
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.5.sp
-                            )
-                            selectedAttacker?.let {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    "(-${it.atk} LP)",
-                                    color = MillenniumGold,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            }
                         }
                     }
                 } else if (selectedAttacker != null) {
@@ -1690,6 +1889,8 @@ private fun HandCarouselAndControls(
     currentPhase: DuelPhase,
     isPlayerTurn: Boolean,
     hasSummoned: Boolean,
+    isGba: Boolean = false,
+    playerActiveMonsters: Int = 0,
     onSelectHandCard: (Int) -> Unit,
     onSummonAttack: () -> Unit,
     onSetDefense: () -> Unit,
@@ -1761,29 +1962,38 @@ private fun HandCarouselAndControls(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (card.isMonster) {
-                            val canSummonNow = isPlayerTurn && !hasSummoned && (currentPhase == DuelPhase.MAIN_PHASE_1 || currentPhase == DuelPhase.MAIN_PHASE_2)
-                            val isTribute = card.level >= 5
+                            val tributesNeeded = if (isGba && card.level >= 7) 2 else if (isGba && card.level in 5..6) 1 else 0
+                            val hasEnoughTributes = tributesNeeded == 0 || playerActiveMonsters >= tributesNeeded
+                            val canSummonNow = isPlayerTurn && !hasSummoned && (currentPhase == DuelPhase.MAIN_PHASE_1 || currentPhase == DuelPhase.MAIN_PHASE_2) && hasEnoughTributes
+                            val isTribute = isGba && card.level >= 5
                             val tributeLabel = if (card.level >= 7) "Tribute (2)" else if (card.level in 5..6) "Tribute (1)" else "Summon"
+                            val buttonText = when {
+                                hasSummoned -> "Summoned"
+                                isTribute && !hasEnoughTributes -> "⚠️ Need ${tributesNeeded} Trib"
+                                else -> "⚔ $tributeLabel"
+                            }
                             Button(
                                 onClick = onSummonAttack,
                                 enabled = canSummonNow,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isTribute) Color(0xFFD97706) else AttackRed
+                                    containerColor = if (isTribute) Color(0xFFD97706) else AttackRed,
+                                    disabledContainerColor = Color(0xFF1E293B)
                                 ),
                                 shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, if (isTribute) MillenniumGold else Color(0xFFFCA5A5)),
+                                border = BorderStroke(1.dp, if (isTribute && hasEnoughTributes) MillenniumGold else Color(0xFF475569)),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Text(if (hasSummoned) "Summoned" else "⚔ $tributeLabel", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                Text(buttonText, fontSize = 11.sp, fontWeight = FontWeight.Black)
                             }
                             Button(
                                 onClick = onSetDefense,
                                 enabled = canSummonNow,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isTribute) Color(0xFF78350F) else DefenseBlue
+                                    containerColor = if (isTribute) Color(0xFF78350F) else DefenseBlue,
+                                    disabledContainerColor = Color(0xFF1E293B)
                                 ),
                                 shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, Color(0xFF60A5FA)),
+                                border = BorderStroke(1.dp, if (canSummonNow) Color(0xFF60A5FA) else Color(0xFF475569)),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(if (isTribute) "🛡 Trib Set" else "🛡 Set DEF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -3016,6 +3226,200 @@ private fun WinnerOverlay(
                 modifier = Modifier.fillMaxWidth(0.7f).height(44.dp)
             ) {
                 Text(if (isGba) "Return to Campaign Hub" else "Return to Map", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+// =========================================================================
+// TRIBUTE SELECTION MODAL DIALOG
+// =========================================================================
+@Composable
+private fun TributeSelectionDialog(
+    cardToSummon: Card,
+    tributesNeeded: Int,
+    isDefense: Boolean,
+    playerMonsters: List<Pair<Int, DuelCard>>,
+    initialSelectedSlot: Int? = null,
+    onConfirmTribute: (List<Int>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedSlots by remember {
+        mutableStateOf(
+            if (initialSelectedSlot != null && playerMonsters.any { it.first == initialSelectedSlot }) {
+                listOf(initialSelectedSlot)
+            } else emptyList()
+        )
+    }
+
+    Surface(
+        color = Color(0xF2090D18),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Surface(
+                color = Color(0xFF131A2B),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(2.dp, MillenniumGold, RoundedCornerShape(12.dp))
+                    .padding(14.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = if (isDefense) "TRIBUTE SET" else "TRIBUTE SUMMON",
+                        color = MillenniumGold,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Summoning [${cardToSummon.name}] (★${cardToSummon.level} • ${cardToSummon.atk}/${cardToSummon.def})",
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Select $tributesNeeded monster(s) on your field to sacrifice (${selectedSlots.size}/$tributesNeeded selected):",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        playerMonsters.forEach { (slotIdx, m) ->
+                            val isSelected = selectedSlots.contains(slotIdx)
+                            val card = m.card
+                            Surface(
+                                color = if (isSelected) Color(0xFF2E2612) else Color(0xFF1E2435),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) MillenniumGold else Color(0xFF334155),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        selectedSlots = if (isSelected) {
+                                            selectedSlots - slotIdx
+                                        } else {
+                                            if (selectedSlots.size < tributesNeeded) {
+                                                selectedSlots + slotIdx
+                                            } else {
+                                                selectedSlots.drop(1) + slotIdx
+                                            }
+                                        }
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (isSelected) "☑" else "☐",
+                                            color = if (isSelected) MillenniumGold else Color(0xFF64748B),
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "Zone ${slotIdx + 1}: ${card.name}",
+                                                color = if (isSelected) MillenniumGold else Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "★${card.level} • ${card.attribute.displayName} • ${card.monsterType.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 9.sp
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = Color(0xFF0F172A),
+                                        shape = RoundedCornerShape(4.dp),
+                                        modifier = Modifier.padding(start = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "${card.atk}/${card.def}",
+                                            color = AttackRed,
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val weakest = playerMonsters
+                                    .sortedBy { it.second.card.atk }
+                                    .take(tributesNeeded)
+                                    .map { it.first }
+                                selectedSlots = weakest
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("Auto (Weakest)", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { onConfirmTribute(selectedSlots) },
+                            enabled = selectedSlots.size == tributesNeeded,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDefense) DefenseBlue else AttackRed,
+                                disabledContainerColor = Color(0xFF1E293B)
+                            ),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1f).height(38.dp)
+                        ) {
+                            Text("Confirm Tribute", fontSize = 10.5.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth().height(32.dp)
+                    ) {
+                        Text("Cancel", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    }
+                }
             }
         }
     }
