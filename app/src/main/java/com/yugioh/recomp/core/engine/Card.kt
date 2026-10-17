@@ -88,6 +88,7 @@ data class Card(
     val isMonster: Boolean get() = cardType == CardType.MONSTER
     val isSpell: Boolean get() = cardType == CardType.SPELL
     val isTrap: Boolean get() = cardType == CardType.TRAP
+    val isEquipSpell: Boolean get() = name in listOf("Axe of Despair", "Malevolent Nuzzler", "Black Pendant", "Megamorph", "Horn of the Unicorn")
     val tributeCountRequired: Int get() = when {
         level <= 4 -> 0
         level in 5..6 -> 1

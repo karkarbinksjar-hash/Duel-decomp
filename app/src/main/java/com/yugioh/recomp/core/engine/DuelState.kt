@@ -21,7 +21,9 @@ data class DuelCard(
     var hasAttackedThisTurn: Boolean = false,
     var attacksDeclaredThisTurn: Int = 0,
     var canChangePosition: Boolean = true,
-    var turnsOnField: Int = 0
+    var turnsOnField: Int = 0,
+    val equippedCards: MutableList<Card> = mutableListOf(),
+    var equippedTargetSlot: Int? = null
 ) {
     val maxAttacksPerTurn: Int
         get() = if (card.name == "Hayabusa Knight" || card.name == "Mataza the Zapper") 2 else 1
@@ -78,6 +80,7 @@ class Duelist(
     val deck: MutableList<Card> = mutableListOf(),
     val hand: MutableList<DuelCard> = mutableListOf(),
     val graveyard: MutableList<Card> = mutableListOf(),
+    val extraDeck: MutableList<Card> = mutableListOf(),
     val monsterZones: Array<DuelCard?> = arrayOfNulls(5),
     val spellTrapZones: Array<DuelCard?> = arrayOfNulls(5),
     var swordsTurnsRemaining: Int = 0,

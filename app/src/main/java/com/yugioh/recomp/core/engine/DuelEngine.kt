@@ -74,30 +74,45 @@ class DuelEngine {
      * Initializes a fresh duel match with 8000 LP and 5-card opening hands
      * using authentic platform-specific decks (GBA TCG Expert vs DDS GBC).
      */
-    fun startDuel(opponentName: String = if (isGbaMode) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName) {
+    fun startDuel(
+        opponentName: String = if (isGbaMode) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName,
+        startingLp: Int = 8000,
+        customOpponentDeck: List<Card>? = null
+    ) {
         opponent = Duelist(opponentName, isHuman = false)
 
-        player.lifePoints = 8000
+        player.lifePoints = startingLp
         player.deck.clear()
         player.hand.clear()
         player.graveyard.clear()
+        player.extraDeck.clear()
+        player.extraDeck.addAll(FusionRitualRegistry.getDefaultExtraDeck())
         player.swordsTurnsRemaining = 0
         for (i in 0 until 5) {
             player.monsterZones[i] = null
             player.spellTrapZones[i] = null
         }
 
-        opponent.lifePoints = 8000
+        opponent.lifePoints = startingLp
         opponent.deck.clear()
         opponent.hand.clear()
         opponent.graveyard.clear()
+        opponent.extraDeck.clear()
+        opponent.extraDeck.addAll(FusionRitualRegistry.getDefaultExtraDeck())
         opponent.swordsTurnsRemaining = 0
         for (i in 0 until 5) {
             opponent.monsterZones[i] = null
             opponent.spellTrapZones[i] = null
         }
 
-        val (pDeck, oDeck) = if (isGbaMode) {
+        val (pDeck, oDeck) = if (customOpponentDeck != null) {
+            val playerDeck = if (GbaCampaignManager.activeDeck.size in 40..60) {
+                GbaCampaignManager.activeDeck.toList()
+            } else {
+                GbaCampaignManager.getGbaStarterDeck()
+            }
+            Pair(playerDeck.shuffled(), customOpponentDeck.shuffled())
+        } else if (isGbaMode) {
             val playerDeck = if (GbaCampaignManager.activeDeck.size in 40..60) {
                 GbaCampaignManager.activeDeck.toList()
             } else {
@@ -129,7 +144,7 @@ class DuelEngine {
 
         val rulesLabel = if (isGbaMode) "GBA TCG Expert Rules" else "DDS GBC Rules"
         log("=== DUEL STARTED vs $opponentName! ===")
-        log("Initial Life Points: 8000 | 8000 ($rulesLabel)")
+        log("Initial Life Points: $startingLp | $startingLp ($rulesLabel)")
         log("Turn 1 - ${player.name}'s Turn (Main Phase 1)")
 
         currentPhase = DuelPhase.MAIN_PHASE_1
@@ -367,11 +382,39 @@ class DuelEngine {
         }
     }
 
-    fun getEffectiveAtk(card: Card): Int =
-        (card.atk + getFieldSpellModifier(activeFieldSpell, card)).coerceAtLeast(0)
+    fun getEffectiveAtk(card: Card, duelCard: DuelCard? = null): Int {
+        var atk = card.atk + getFieldSpellModifier(activeFieldSpell, card)
+        if (duelCard != null) {
+            for (equip in duelCard.equippedCards) {
+                atk += when (equip.name) {
+                    "Axe of Despair" -> 1000
+                    "Malevolent Nuzzler" -> 700
+                    "Black Pendant" -> 500
+                    "Horn of the Unicorn" -> 700
+                    "Megamorph" -> {
+                        val playerControls = player.monsterZones.any { it === duelCard }
+                        val isLower = if (playerControls) player.lifePoints < opponent.lifePoints else opponent.lifePoints < player.lifePoints
+                        if (isLower) card.atk else -(card.atk / 2)
+                    }
+                    else -> 0
+                }
+            }
+        }
+        return atk.coerceAtLeast(0)
+    }
 
-    fun getEffectiveDef(card: Card): Int =
-        (card.def + getFieldSpellModifier(activeFieldSpell, card)).coerceAtLeast(0)
+    fun getEffectiveDef(card: Card, duelCard: DuelCard? = null): Int {
+        var def = card.def + getFieldSpellModifier(activeFieldSpell, card)
+        if (duelCard != null) {
+            for (equip in duelCard.equippedCards) {
+                def += when (equip.name) {
+                    "Horn of the Unicorn" -> 700
+                    else -> 0
+                }
+            }
+        }
+        return def.coerceAtLeast(0)
+    }
 
     fun triggerFlipEffect(
         flipOwner: Duelist,
@@ -497,6 +540,11 @@ class DuelEngine {
         return player.hasFaceUpMonster("Jinzo") || opponent.hasFaceUpMonster("Jinzo")
     }
 
+    fun isImperialOrderActive(): Boolean {
+        return player.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Imperial Order" } ||
+            opponent.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Imperial Order" }
+    }
+
     private fun checkTrapHole(trapOwner: Duelist, summoningDuelist: Duelist, summonedSlot: Int) {
         val summonedMonster = summoningDuelist.monsterZones[summonedSlot] ?: return
         if (summonedMonster.position.isFaceDown || summonedMonster.card.atk < 1000) return
@@ -584,6 +632,90 @@ class DuelEngine {
         lastActivatedSpell = Pair(card.name, duelist.name)
         log("${duelist.name} activated Spell: [${card.name}]!")
 
+        resolveSpellEffect(duelist, opp, card, isPlayer, tempSlot)
+
+        duelist.spellTrapZones[tempSlot] = null
+        if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland") && !card.isEquipSpell) {
+            duelist.graveyard.add(card)
+        }
+        return true
+    }
+
+    /**
+     * Activates a set Spell card from the Spell/Trap zone (flipping it face-up).
+     */
+    fun activateSetSpell(isPlayer: Boolean, slotIndex: Int): Boolean {
+        val duelist = if (isPlayer) player else opponent
+        val other = if (isPlayer) opponent else player
+        if (winner != null || slotIndex !in 0..4) return false
+        val duelCard = duelist.spellTrapZones[slotIndex] ?: return false
+        val card = duelCard.card
+        if (!card.isSpell) return false
+
+        if (currentPhase != DuelPhase.MAIN_PHASE_1 && currentPhase != DuelPhase.MAIN_PHASE_2) {
+            log("Can only activate Spells during Main Phase")
+            return false
+        }
+
+        // Imperial Order check
+        if (isImperialOrderActive()) {
+            log("⚡ Imperial Order negates the activation of [${card.name}]!")
+            duelist.spellTrapZones[slotIndex] = null
+            duelist.graveyard.add(card)
+            return false
+        }
+
+        // Counter-Trap check
+        val counterSlot = (0 until 5).firstOrNull { slot ->
+            val t = other.spellTrapZones[slot]
+            t != null && t.position.isFaceDown && (t.card.name == "Magic Jammer" || t.card.name == "Solemn Judgment")
+        }
+        if (counterSlot != null && !isJinzoActive()) {
+            val counterTrap = other.spellTrapZones[counterSlot]!!.card
+            if (counterTrap.name == "Magic Jammer" && other.hand.isNotEmpty()) {
+                val discard = other.hand.removeAt(0)
+                other.graveyard.add(discard.card)
+                other.spellTrapZones[counterSlot] = null
+                other.graveyard.add(counterTrap)
+                duelist.spellTrapZones[slotIndex] = null
+                duelist.graveyard.add(card)
+                log("⚡ CHAIN LINK 1: ${duelist.name} activates Set Spell: [${card.name}]")
+                log("⚡ CHAIN LINK 2: ${other.name} chains Counter-Trap: [Magic Jammer]!")
+                log("❌ CHAIN RESOLUTION: [Magic Jammer] negates and destroys [${card.name}]!")
+                return true
+            } else if (counterTrap.name == "Solemn Judgment" && other.lifePoints > 1) {
+                other.lifePoints /= 2
+                other.spellTrapZones[counterSlot] = null
+                other.graveyard.add(counterTrap)
+                duelist.spellTrapZones[slotIndex] = null
+                duelist.graveyard.add(card)
+                log("⚡ CHAIN LINK 1: ${duelist.name} activates Set Spell: [${card.name}]")
+                log("⚡ CHAIN LINK 2: ${other.name} chains Counter-Trap: [Solemn Judgment]!")
+                log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [${card.name}]!")
+                return true
+            }
+        }
+
+        duelCard.position = CardPosition.FACE_UP_SPELL_TRAP
+        lastActivatedSpell = Pair(card.name, duelist.name)
+        log("${duelist.name} flipped face-up & activated Set Spell: [${card.name}]!")
+
+        resolveSpellEffect(duelist, other, card, isPlayer, slotIndex)
+
+        if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland") && !card.isEquipSpell) {
+            duelist.spellTrapZones[slotIndex] = null
+            duelist.graveyard.add(card)
+        }
+        return true
+    }
+
+    private fun resolveSpellEffect(
+        duelist: Duelist,
+        opp: Duelist,
+        card: Card,
+        isPlayer: Boolean,
+        zoneSlot: Int
+    ) {
         when (card.name) {
             "Pot of Greed" -> {
                 drawCard(isPlayer, ignoreHandLimit = true)
@@ -616,7 +748,6 @@ class DuelEngine {
                 }
             }
             "Change of Heart", "Snatch Steal" -> {
-                val opp = if (isPlayer) opponent else player
                 val oppSlot = (0 until 5)
                     .filter { opp.monsterZones[it] != null }
                     .maxByOrNull { opp.monsterZones[it]!!.card.atk }
@@ -632,7 +763,6 @@ class DuelEngine {
                 }
             }
             "Swords of Revealing Light" -> {
-                val opp = if (isPlayer) opponent else player
                 opp.swordsTurnsRemaining = 3
                 var revealedCount = 0
                 for (i in 0 until 5) {
@@ -645,7 +775,6 @@ class DuelEngine {
                 log("⚔️ SWORDS OF REVEALING LIGHT: ${duelist.name} illuminated the field! Revealed $revealedCount face-down monster(s). ${opp.name} cannot attack for 3 turns.")
             }
             "Raigeki" -> {
-                val opp = if (isPlayer) opponent else player
                 var count = 0
                 for (i in 0 until 5) {
                     val m = opp.monsterZones[i]
@@ -674,7 +803,6 @@ class DuelEngine {
                 log("Dark Hole destroyed $count monster(s) on the field!")
             }
             "Harpie's Feather Duster" -> {
-                val opp = if (isPlayer) opponent else player
                 var count = 0
                 for (i in 0 until 5) {
                     val st = opp.spellTrapZones[i]
@@ -709,13 +837,11 @@ class DuelEngine {
                 log("${duelist.name} gained 1000 LP (Total: ${duelist.lifePoints})")
             }
             "Sparks" -> {
-                val opp = if (isPlayer) opponent else player
                 opp.lifePoints = (opp.lifePoints - 200).coerceAtLeast(0)
                 log("Sparks dealt 200 damage to ${opp.name}! (LP: ${opp.lifePoints})")
                 checkWinConditions()
             }
             "Hinotama" -> {
-                val opp = if (isPlayer) opponent else player
                 opp.lifePoints = (opp.lifePoints - 500).coerceAtLeast(0)
                 log("Hinotama dealt 500 damage to ${opp.name}! (LP: ${opp.lifePoints})")
                 checkWinConditions()
@@ -732,13 +858,90 @@ class DuelEngine {
                 activeFieldSpell = card
                 log("🌌 FIELD SPELL: [${card.name}] is now active across the arena! Modifying monster stats.")
             }
+            "Polymerization" -> {
+                val available = (duelist.hand.map { it.card } + duelist.monsterZones.filterNotNull().map { it.card })
+                val possible = FusionRitualRegistry.findPossibleFusions(duelist.extraDeck, available)
+                if (possible.isNotEmpty()) {
+                    val (recipe, materials) = possible.first()
+                    for (mat in materials) {
+                        val handIdx = duelist.hand.indexOfFirst { it.card.name.equals(mat.name, ignoreCase = true) }
+                        if (handIdx != -1) {
+                            duelist.hand.removeAt(handIdx)
+                            duelist.graveyard.add(mat)
+                        } else {
+                            val fIdx = (0 until 5).firstOrNull { duelist.monsterZones[it]?.card?.name.equals(mat.name, ignoreCase = true) }
+                            if (fIdx != null) {
+                                duelist.monsterZones[fIdx] = null
+                                duelist.graveyard.add(mat)
+                            }
+                        }
+                    }
+                    duelist.extraDeck.remove(recipe.fusionMonster)
+                    val emptySlot = duelist.firstEmptyMonsterSlot()
+                    if (emptySlot != -1) {
+                        duelist.monsterZones[emptySlot] = DuelCard(card = recipe.fusionMonster, position = CardPosition.FACE_UP_ATTACK)
+                        log("🌀 FUSION SUMMON! ${duelist.name} fused ${materials.joinToString(" + ") { it.name }} to summon [${recipe.fusionMonster.name}]! (ATK ${recipe.fusionMonster.atk} / DEF ${recipe.fusionMonster.def})")
+                    }
+                } else {
+                    log("Polymerization resolved: No valid Fusion Materials found in Hand or on Field.")
+                }
+            }
+            "Black Luster Ritual", "Black Magic Ritual", "Black Illusion Ritual" -> {
+                val ritualResult = FusionRitualRegistry.checkRitualRequirements(
+                    ritualSpellName = card.name,
+                    handCards = duelist.hand.map { it.card },
+                    fieldMonsters = duelist.monsterZones.filterNotNull().map { it.card }
+                )
+                if (ritualResult != null) {
+                    val (ritualMonster, tributes) = ritualResult
+                    val rHandIdx = duelist.hand.indexOfFirst { it.card.name.equals(ritualMonster.name, ignoreCase = true) }
+                    if (rHandIdx != -1) {
+                        duelist.hand.removeAt(rHandIdx)
+                    }
+                    for (trib in tributes) {
+                        val hIdx = duelist.hand.indexOfFirst { it.card.name.equals(trib.name, ignoreCase = true) }
+                        if (hIdx != -1) {
+                            duelist.hand.removeAt(hIdx)
+                            duelist.graveyard.add(trib)
+                        } else {
+                            val fIdx = (0 until 5).firstOrNull { duelist.monsterZones[it]?.card?.name.equals(trib.name, ignoreCase = true) }
+                            if (fIdx != null) {
+                                duelist.monsterZones[fIdx] = null
+                                duelist.graveyard.add(trib)
+                            }
+                        }
+                    }
+                    val slot = duelist.firstEmptyMonsterSlot()
+                    if (slot != -1) {
+                        duelist.monsterZones[slot] = DuelCard(card = ritualMonster, position = CardPosition.FACE_UP_ATTACK)
+                        log("✨ RITUAL SUMMON! ${duelist.name} sacrificed ${tributes.size} monster(s) to awaken [${ritualMonster.name}]! (ATK ${ritualMonster.atk} / DEF ${ritualMonster.def})")
+                    }
+                } else {
+                    log("${card.name} resolved: Missing Ritual Monster in hand or insufficient tribute levels.")
+                }
+            }
+            "Axe of Despair", "Malevolent Nuzzler", "Black Pendant", "Megamorph", "Horn of the Unicorn" -> {
+                val targetSlot = (0 until 5).firstOrNull { duelist.monsterZones[it] != null }
+                if (targetSlot != null) {
+                    val targetMonster = duelist.monsterZones[targetSlot]!!
+                    targetMonster.equippedCards.add(card)
+                    if (zoneSlot in 0..4) {
+                        duelist.spellTrapZones[zoneSlot]?.equippedTargetSlot = targetSlot
+                    }
+                    val buff = when (card.name) {
+                        "Axe of Despair" -> "+1000 ATK"
+                        "Malevolent Nuzzler" -> "+700 ATK"
+                        "Black Pendant" -> "+500 ATK"
+                        "Horn of the Unicorn" -> "+700 ATK/DEF"
+                        "Megamorph" -> "ATK Doubled / Halved"
+                        else -> "Equipped"
+                    }
+                    log("⚔️ EQUIP: [${card.name}] equipped to [${targetMonster.card.name}] ($buff)!")
+                } else {
+                    log("[${card.name}] has no valid target monster on the field.")
+                }
+            }
         }
-
-        duelist.spellTrapZones[tempSlot] = null
-        if (card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland")) {
-            duelist.graveyard.add(card)
-        }
-        return true
     }
 
     /**
@@ -831,6 +1034,24 @@ class DuelEngine {
         if (duelist.swordsTurnsRemaining > 0) return false
         val monster = duelist.monsterZones.getOrNull(slotIndex) ?: return false
         return monster.canDeclareAttack
+    }
+
+    private fun cleanupMonsterEquips(monster: DuelCard, owner: Duelist, opponentDuelist: Duelist) {
+        if (monster.equippedCards.isEmpty()) return
+        for (equip in monster.equippedCards) {
+            owner.graveyard.add(equip)
+            if (equip.name == "Black Pendant") {
+                opponentDuelist.lifePoints = (opponentDuelist.lifePoints - 500).coerceAtLeast(0)
+                log("💥 [Black Pendant] sent to Graveyard! Inflicted 500 damage to ${opponentDuelist.name}!")
+            }
+        }
+        for (i in 0 until 5) {
+            val st = owner.spellTrapZones[i]
+            if (st != null && st.equippedTargetSlot != null && monster.equippedCards.any { it.id == st.card.id }) {
+                owner.spellTrapZones[i] = null
+            }
+        }
+        monster.equippedCards.clear()
     }
 
     /**
@@ -1016,7 +1237,7 @@ class DuelEngine {
             }
 
             attackerMonster.markAttacked()
-            val damage = getEffectiveAtk(attackerMonster.card)
+            val damage = getEffectiveAtk(attackerMonster.card, attackerMonster)
             defenderDuelist.lifePoints = (defenderDuelist.lifePoints - damage).coerceAtLeast(0)
 
             if (attackerMonster.card.name == "White Magical Hat" && damage > 0 && defenderDuelist.hand.isNotEmpty()) {
@@ -1043,14 +1264,14 @@ class DuelEngine {
         val targetMonster = defenderDuelist.monsterZones[targetSlot] ?: return false
 
         attackerMonster.markAttacked()
-        val aAtk = getEffectiveAtk(attackerMonster.card)
+        val aAtk = getEffectiveAtk(attackerMonster.card, attackerMonster)
         val dCard = targetMonster.card
 
         // Yu-Gi-Oh! Official Rule: When a face-down monster is attacked, it is flipped face-up in the Damage Step before damage calculation
         val wasFaceDown = targetMonster.position == CardPosition.FACE_DOWN_DEFENSE
         if (wasFaceDown) {
             targetMonster.position = CardPosition.FACE_UP_DEFENSE
-            log("${defenderDuelist.name}'s face-down monster was flipped face-up: [${dCard.name}] (${getEffectiveDef(dCard)} DEF)!")
+            log("${defenderDuelist.name}'s face-down monster was flipped face-up: [${dCard.name}] (${getEffectiveDef(dCard, targetMonster)} DEF)!")
         }
 
         // Check Dark Duel Stories Elemental Alignment Dominance (GBC DDS Only)
@@ -1058,6 +1279,7 @@ class DuelEngine {
             val aAttr = attackerMonster.card.attribute
             val dAttr = dCard.attribute
             if (aAttr.hasAlignmentAdvantageOver(dAttr)) {
+                cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
                 defenderDuelist.monsterZones[targetSlot] = null
                 clashState = ClashState(
@@ -1072,6 +1294,7 @@ class DuelEngine {
                 checkWinConditions()
                 return true
             } else if (dAttr.hasAlignmentAdvantageOver(aAttr)) {
+                cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
                 attackerDuelist.monsterZones[attackerSlot] = null
                 clashState = ClashState(
@@ -1090,10 +1313,11 @@ class DuelEngine {
 
         // Standard Battle Calculation (Official GBA TCG Expert Rules)
         if (targetMonster.position == CardPosition.FACE_UP_ATTACK) {
-            val dAtk = getEffectiveAtk(dCard)
+            val dAtk = getEffectiveAtk(dCard, targetMonster)
             if (aAtk > dAtk) {
                 val diff = aAtk - dAtk
                 defenderDuelist.lifePoints = (defenderDuelist.lifePoints - diff).coerceAtLeast(0)
+                cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
                 defenderDuelist.monsterZones[targetSlot] = null
 
@@ -1115,6 +1339,7 @@ class DuelEngine {
             } else if (aAtk < dAtk) {
                 val diff = dAtk - aAtk
                 attackerDuelist.lifePoints = (attackerDuelist.lifePoints - diff).coerceAtLeast(0)
+                cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
                 attackerDuelist.monsterZones[attackerSlot] = null
 
@@ -1128,8 +1353,10 @@ class DuelEngine {
                 )
                 log("${attackerMonster.card.name} ($aAtk ATK) was destroyed by ${dCard.name} ($dAtk ATK)! $diff damage to ${attackerDuelist.name}.")
             } else {
+                cleanupMonsterEquips(attackerMonster, attackerDuelist, defenderDuelist)
                 attackerDuelist.graveyard.add(attackerMonster.card)
                 attackerDuelist.monsterZones[attackerSlot] = null
+                cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
                 defenderDuelist.monsterZones[targetSlot] = null
 
@@ -1145,9 +1372,10 @@ class DuelEngine {
             }
         } else {
             // Defender in Defense Position (flipped to FACE_UP_DEFENSE if wasFaceDown)
-            val dDef = getEffectiveDef(dCard)
+            val dDef = getEffectiveDef(dCard, targetMonster)
             val flipPrefix = if (wasFaceDown) "Flipped face-up! " else ""
             if (aAtk > dDef) {
+                cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
                 defenderDuelist.graveyard.add(dCard)
                 defenderDuelist.monsterZones[targetSlot] = null
 

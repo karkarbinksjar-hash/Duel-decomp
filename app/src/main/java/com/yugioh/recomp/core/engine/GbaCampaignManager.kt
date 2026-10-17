@@ -932,4 +932,95 @@ object GbaCampaignManager {
         }
         return false
     }
+
+    val savedDeckRecipes = mutableListOf(
+        SavedDeckRecipe(1, "Main Tournament Deck", mutableListOf()),
+        SavedDeckRecipe(2, "Dragon Beatdown", mutableListOf()),
+        SavedDeckRecipe(3, "Spellcaster & Ritual", mutableListOf()),
+        SavedDeckRecipe(4, "Warrior & Fusion", mutableListOf()),
+        SavedDeckRecipe(5, "Trap Control & Burn", mutableListOf())
+    )
+
+    var currentActiveSlot: Int = 1
+
+    var customDuelSettings = CustomDuelSettings()
+
+    fun saveCurrentDeckToSlot(slotId: Int, customName: String? = null) {
+        val recipe = savedDeckRecipes.find { it.id == slotId } ?: return
+        if (!customName.isNullOrBlank()) {
+            recipe.name = customName
+        }
+        recipe.cardIds.clear()
+        recipe.cardIds.addAll(activeDeck.map { it.id })
+    }
+
+    fun loadDeckFromSlot(slotId: Int): Boolean {
+        val recipe = savedDeckRecipes.find { it.id == slotId } ?: return false
+        if (recipe.cardIds.isEmpty()) return false
+        trunk.addAll(activeDeck)
+        activeDeck.clear()
+
+        for (cId in recipe.cardIds) {
+            val idx = trunk.indexOfFirst { it.id == cId }
+            if (idx != -1) {
+                activeDeck.add(trunk.removeAt(idx))
+            } else {
+                val card = GbaCardCatalog.getCardById(cId)
+                    ?: DdsCardCatalog.getCardById(cId)
+                if (card != null) {
+                    activeDeck.add(card)
+                }
+            }
+        }
+        currentActiveSlot = slotId
+        return true
+    }
+
+    fun exportDeckToPasscodes(): String {
+        return activeDeck.mapNotNull { it.password ?: CardPasscodeRegistry.findPasscodeByCardName(it.name) }.joinToString(",")
+    }
+
+    fun importDeckFromPasscodes(input: String): Pair<Int, String> {
+        val codes = input.split(",", "\n", " ", ";")
+            .map { it.trim().padStart(8, '0') }
+            .filter { it.length == 8 && it.all { c -> c.isDigit() } }
+        if (codes.isEmpty()) return Pair(0, "No valid 8-digit passcodes found in input.")
+
+        trunk.addAll(activeDeck)
+        activeDeck.clear()
+        var importedCount = 0
+
+        for (code in codes) {
+            val name = CardPasscodeRegistry.findCardNameByPasscode(code) ?: continue
+            val card = GbaCardCatalog.getCardByName(name)
+                ?: DdsCardCatalog.getCardByName(name)
+                ?: Card(
+                    id = 8000 + activeDeck.size,
+                    name = name,
+                    atk = 1500,
+                    def = 1200,
+                    level = 4,
+                    attribute = CardAttribute.DARK,
+                    cardType = CardType.MONSTER,
+                    password = code
+                )
+            activeDeck.add(card)
+            importedCount++
+            if (activeDeck.size >= 60) break
+        }
+        return Pair(importedCount, "Successfully imported $importedCount cards into active deck!")
+    }
 }
+
+data class SavedDeckRecipe(
+    val id: Int,
+    var name: String,
+    val cardIds: MutableList<Int>
+)
+
+data class CustomDuelSettings(
+    var startingLp: Int = 8000,
+    var enableDdsAlignment: Boolean = false,
+    var opponentName: String = "Yugi Muto",
+    var isMirrorMatch: Boolean = false
+)
