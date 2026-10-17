@@ -1601,5 +1601,96 @@ class DuelEngineTest {
         assertEquals("Cup of Ace canonical passcode", "00441788", CardPasscodeRegistry.findPasscodeByCardName("Cup of Ace"))
         assertEquals("Witch of the Black Forest canonical passcode", "04335645", CardPasscodeRegistry.findPasscodeByCardName("Witch of the Black Forest"))
     }
+
+    @Test
+    fun testKuribohHandTrapNegatesBattleDamage() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val kuriboh = Card(id = 401, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.hand.add(DuelCard(card = kuriboh))
+
+        // Player attacks directly with 3000 ATK Blue-Eyes White Dragon
+        val blueEyes = Card(id = 402, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
+        testEngine.player.monsterZones[0] = DuelCard(card = blueEyes, position = CardPosition.FACE_UP_ATTACK)
+        testEngine.nextPhase() // Enter Battle Phase
+
+        val oppLpBefore = testEngine.opponent.lifePoints
+        val attackSuccess = testEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue("Attack resolves", attackSuccess)
+        assertEquals("Kuriboh in hand reduced battle damage to 0!", oppLpBefore, testEngine.opponent.lifePoints)
+        assertTrue("Kuriboh moved to opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Kuriboh" })
+        assertFalse("Kuriboh removed from hand", testEngine.opponent.hand.any { it.card.name == "Kuriboh" })
+        assertEquals("Active chain link 1 recorded Kuriboh", "Kuriboh", testEngine.activeChain.firstOrNull()?.card?.name)
+    }
+
+    @Test
+    fun testSolemnJudgmentNegatesNormalSummonWithHalfLp() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Seto Kaiba")
+
+        val solemn = Card(id = 403, name = "Solemn Judgment", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP)
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = solemn, position = CardPosition.SET_SPELL_TRAP)
+
+        val lizard = GbaCardCatalog.ARMORED_LIZARD
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = lizard))
+
+        val oppLpBefore = testEngine.opponent.lifePoints
+        val summonSuccess = testEngine.summonMonster(isPlayer = true, handIndex = 0, slotIndex = 0, setDefense = false)
+        assertTrue("Summon action processed", summonSuccess)
+        assertNull("Lizard summon was negated, zone 0 empty", testEngine.player.monsterZones[0])
+        assertTrue("Lizard sent to player graveyard", testEngine.player.graveyard.any { it.name == "Armored Lizard" })
+        assertEquals("Solemn Judgment paid half LP", oppLpBefore / 2, testEngine.opponent.lifePoints)
+        assertTrue("Solemn Judgment sent to opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Solemn Judgment" })
+    }
+
+    @Test
+    fun testMagicJammerNegatesSpellWithDiscard() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val magicJammer = Card(id = 404, name = "Magic Jammer", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP)
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = magicJammer, position = CardPosition.SET_SPELL_TRAP)
+        val discardFodder = Card(id = 405, name = "Baby Dragon", atk = 1200, def = 700, level = 3, attribute = CardAttribute.WIND, cardType = CardType.MONSTER)
+        testEngine.opponent.hand.clear()
+        testEngine.opponent.hand.add(DuelCard(card = discardFodder))
+
+        // Player activates Raigeki
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = GbaCardCatalog.RAIGEKI))
+        // Put a monster on opponent's field to verify it survives because Raigeki was negated
+        testEngine.opponent.monsterZones[0] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = 0)
+        assertTrue("Spell activation processed", activated)
+        assertNotNull("Armored Lizard survived because Raigeki was negated", testEngine.opponent.monsterZones[0])
+        assertTrue("Raigeki in player graveyard", testEngine.player.graveyard.any { it.name == "Raigeki" })
+        assertTrue("Magic Jammer in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Magic Jammer" })
+        assertTrue("Discard fodder in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Baby Dragon" })
+    }
+
+    @Test
+    fun testSevenToolsNegatesTrapWith1000Lp() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Player has Seven Tools set
+        val sevenTools = Card(id = 406, name = "Seven Tools of the Bandit", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP)
+        testEngine.player.spellTrapZones[0] = DuelCard(card = sevenTools, position = CardPosition.SET_SPELL_TRAP)
+
+        // Opponent sets and activates Waboku
+        val waboku = Card(id = 407, name = "Waboku", atk = 0, def = 0, level = 0, attribute = CardAttribute.TRAP, cardType = CardType.TRAP)
+        testEngine.opponent.spellTrapZones[0] = DuelCard(card = waboku, position = CardPosition.SET_SPELL_TRAP)
+
+        val playerLpBefore = testEngine.player.lifePoints
+        val activated = testEngine.activateSetTrap(isPlayer = false, slotIndex = 0)
+        assertTrue("Trap activation processed", activated)
+        assertEquals("Player paid 1000 LP for Seven Tools", playerLpBefore - 1000, testEngine.player.lifePoints)
+        assertFalse("Waboku was negated and NOT active", testEngine.opponent.isWabokuActive)
+        assertTrue("Seven Tools in player graveyard", testEngine.player.graveyard.any { it.name == "Seven Tools of the Bandit" })
+        assertTrue("Waboku in opponent graveyard", testEngine.opponent.graveyard.any { it.name == "Waboku" })
+    }
 }
 
