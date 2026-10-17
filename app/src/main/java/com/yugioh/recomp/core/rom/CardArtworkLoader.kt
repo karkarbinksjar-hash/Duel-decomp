@@ -222,6 +222,50 @@ object CardArtworkLoader {
         } catch (_: Throwable) {}
     }
 
+    fun isCardCached(card: Card, isFullCard: Boolean = false): Boolean {
+        val rawCode = getPasscode(card)
+        val cleanId = rawCode?.trimStart('0')?.takeIf { it.isNotEmpty() }
+        val cardKey = cleanId ?: rawCode ?: card.name.lowercase().replace(" ", "_")
+        val key = if (isFullCard) "full_$cardKey" else "crop_$cardKey"
+
+        if (memoryCache.containsKey(key)) return true
+        val localDir = cacheDir ?: File("/data/data/com.yugioh.recomp/cache/card_art").takeIf { it.exists() }
+        val candidateFileNames = listOfNotNull(
+            "$key.jpg",
+            cleanId?.let { if (isFullCard) "full_$it.jpg" else "crop_$it.jpg" },
+            rawCode?.let { if (isFullCard) "full_$it.jpg" else "crop_$it.jpg" }
+        )
+        return candidateFileNames.any { fName ->
+            val file = localDir?.let { File(it, fName) }
+            file != null && file.exists() && file.length() > 0
+        }
+    }
+
+    fun getSyncStatus(cards: List<Card>): Pair<Int, Int> {
+        val cached = cards.count { isCardCached(it, isFullCard = false) }
+        return Pair(cached, cards.size)
+    }
+
+    suspend fun syncAllCardArtwork(
+        cards: List<Card>,
+        onProgress: (current: Int, total: Int, cardName: String) -> Unit
+    ): Int = withContext(Dispatchers.IO) {
+        var newlyCached = 0
+        val total = cards.size
+        for ((index, card) in cards.withIndex()) {
+            val wasCached = isCardCached(card, isFullCard = false)
+            if (!wasCached) {
+                val loadedCrop = loadArtwork(card, isFullCard = false)
+                val loadedFull = loadArtwork(card, isFullCard = true)
+                if (loadedCrop != null || loadedFull != null) {
+                    newlyCached++
+                }
+            }
+            onProgress(index + 1, total, card.name)
+        }
+        newlyCached
+    }
+
     fun preloadCards(cards: List<Card>) {
         CoroutineScope(Dispatchers.IO).launch {
             for (card in cards) {
