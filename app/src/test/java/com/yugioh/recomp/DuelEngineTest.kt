@@ -1459,5 +1459,147 @@ class DuelEngineTest {
         assertEquals(2000, mirrorEngine.player.lifePoints)
         assertEquals("Mirror Clone", mirrorEngine.opponent.name)
     }
+
+    @Test
+    fun testExodiaObliterateVictoryInHand() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Seto Kaiba")
+        testEngine.player.hand.clear()
+
+        val p1 = Card(id = 101, name = "Exodia the Forbidden One", atk = 1000, def = 1000, level = 3, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val p2 = Card(id = 102, name = "Right Arm of the Forbidden One", atk = 200, def = 300, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val p3 = Card(id = 103, name = "Left Arm of the Forbidden One", atk = 200, def = 300, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val p4 = Card(id = 104, name = "Right Leg of the Forbidden One", atk = 200, def = 300, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val p5 = Card(id = 105, name = "Left Leg of the Forbidden One", atk = 200, def = 300, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+
+        testEngine.player.hand.addAll(listOf(DuelCard(card = p1), DuelCard(card = p2), DuelCard(card = p3), DuelCard(card = p4)))
+        assertFalse("4 pieces does not win", ToonAnimeArchetype.hasAllExodiaPieces(testEngine.player.hand))
+
+        // Draw the 5th piece
+        testEngine.player.deck.clear()
+        testEngine.player.deck.add(p5)
+        testEngine.drawCard(isPlayer = true)
+
+        assertTrue("All 5 pieces assembled", ToonAnimeArchetype.hasAllExodiaPieces(testEngine.player.hand))
+        assertEquals("Player wins immediately", testEngine.player.name, testEngine.winner)
+        assertTrue("Exodia win flag set", testEngine.isExodiaWin)
+    }
+
+    @Test
+    fun testToonWorldSummonRequirementAndDestructionCollapse() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Maximillion Pegasus")
+
+        val toonMermaid = ToonAnimeArchetype.TOON_MERMAID
+        testEngine.player.hand.clear()
+        testEngine.player.hand.add(DuelCard(card = toonMermaid))
+
+        // Without Toon World on field, summoning Toon Mermaid should fail
+        val summonWithoutToonWorld = testEngine.summonMonster(isPlayer = true, handIndex = 0, slotIndex = 0)
+        assertFalse("Cannot summon Toon monster without Toon World active", summonWithoutToonWorld)
+        assertNull("Monster slot remains empty", testEngine.player.monsterZones[0])
+
+        // Activate Toon World
+        testEngine.player.hand.add(DuelCard(card = ToonAnimeArchetype.TOON_WORLD))
+        val toonWorldHandIdx = testEngine.player.hand.size - 1
+        val initialLp = testEngine.player.lifePoints
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = toonWorldHandIdx)
+        assertTrue("Toon World activated successfully", activated)
+        assertEquals("1000 LP cost deducted for Toon World", initialLp - 1000, testEngine.player.lifePoints)
+        assertTrue("Toon World is active", testEngine.isToonWorldActive(testEngine.player))
+
+        // Now summon Toon Mermaid
+        val mermaidHandIdx = testEngine.player.hand.indexOfFirst { it.card.name == "Toon Mermaid" }
+        val summonWithToonWorld = testEngine.summonMonster(isPlayer = true, handIndex = mermaidHandIdx, slotIndex = 0)
+        assertTrue("Toon Mermaid summoned successfully with Toon World active", summonWithToonWorld)
+        assertNotNull("Monster slot 0 has Toon Mermaid", testEngine.player.monsterZones[0])
+
+        // Destroy Toon World: Toon Mermaid should collapse and be sent to Graveyard!
+        testEngine.player.spellTrapZones[0] = null // Remove Toon World
+        testEngine.checkToonWorldDestruction(testEngine.player)
+        assertNull("Toon Mermaid collapsed when Toon World left field", testEngine.player.monsterZones[0])
+        assertTrue("Toon Mermaid moved to Graveyard", testEngine.player.graveyard.any { it.name == "Toon Mermaid" })
+    }
+
+    @Test
+    fun testToonDirectAttackBypassAndSummoningSickness() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val toonSkull = ToonAnimeArchetype.TOON_SUMMONED_SKULL
+        testEngine.player.monsterZones[0] = DuelCard(card = toonSkull, position = CardPosition.FACE_UP_ATTACK, turnsOnField = 0)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = GbaCardCatalog.ARMORED_LIZARD, position = CardPosition.FACE_UP_ATTACK)
+
+        testEngine.nextPhase() // Enter Battle Phase
+
+        // Summoning sickness test: turnsOnField == 0
+        val attackSickness = testEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertFalse("Toon cannot attack directly turn it is summoned", attackSickness)
+
+        // Advance turnsOnField to 1
+        testEngine.player.monsterZones[0]?.turnsOnField = 1
+        val oppLpBefore = testEngine.opponent.lifePoints
+        val attackBypass = testEngine.declareAttack(attackerSlot = 0, targetSlot = null)
+        assertTrue("Toon can bypass non-Toon monsters for direct attack", attackBypass)
+        assertEquals("Direct attack damage dealt (2500 ATK)", oppLpBefore - 2500, testEngine.opponent.lifePoints)
+    }
+
+    @Test
+    fun testSanganAndWitchOfTheBlackForestSearchers() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        testEngine.player.deck.clear()
+        val kuriboh = Card(id = 201, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val highDefMonster = Card(id = 202, name = "Big Shield Gardna", atk = 100, def = 2600, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
+        val lowDefMonster = Card(id = 203, name = "Dark Magician", atk = 2500, def = 1200, level = 7, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        testEngine.player.deck.addAll(listOf(kuriboh, highDefMonster, lowDefMonster))
+
+        val sangan = Card(id = 204, name = "Sangan", atk = 1000, def = 600, level = 3, attribute = CardAttribute.DARK, cardType = CardType.MONSTER)
+        val witch = ToonAnimeArchetype.WITCH_OF_THE_BLACK_FOREST
+
+        // Trigger Sangan searcher (ATK <= 1500)
+        val handBeforeSangan = testEngine.player.hand.size
+        testEngine.triggerGraveyardSearcher(sangan, testEngine.player)
+        assertEquals("Sangan adds 1 monster with ATK <= 1500 to hand", handBeforeSangan + 1, testEngine.player.hand.size)
+        assertTrue("Kuriboh (300 ATK) was searched", testEngine.player.hand.any { it.card.name == "Kuriboh" })
+
+        // Trigger Witch searcher (DEF <= 1500)
+        val handBeforeWitch = testEngine.player.hand.size
+        testEngine.triggerGraveyardSearcher(witch, testEngine.player)
+        assertEquals("Witch adds 1 monster with DEF <= 1500 to hand", handBeforeWitch + 1, testEngine.player.hand.size)
+        assertTrue("Dark Magician (1200 DEF) was searched", testEngine.player.hand.any { it.card.name == "Dark Magician" })
+    }
+
+    @Test
+    fun testRevivalAndGambleCards() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val summonSkull = GbaCardCatalog.SUMMONED_SKULL_GBA
+        testEngine.player.graveyard.add(summonSkull)
+
+        // Premature Burial (800 LP cost, resurrects monster)
+        val initLp = testEngine.player.lifePoints
+        testEngine.player.hand.add(DuelCard(card = ToonAnimeArchetype.PREMATURE_BURIAL))
+        val pbIdx = testEngine.player.hand.size - 1
+        val pbSuccess = testEngine.activateSpell(isPlayer = true, handIndex = pbIdx)
+        assertTrue("Premature Burial activated", pbSuccess)
+        assertEquals("800 LP paid for Premature Burial", initLp - 800, testEngine.player.lifePoints)
+        assertEquals("Summoned Skull revived in monster zone 0", "Summoned Skull", testEngine.player.monsterZones[0]?.card?.name)
+
+        // Call of the Haunted (Trap resurrection)
+        val blueEyes = Card(id = 301, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
+        testEngine.player.graveyard.add(blueEyes)
+        testEngine.player.spellTrapZones[1] = DuelCard(card = ToonAnimeArchetype.CALL_OF_THE_HAUNTED, position = CardPosition.SET_SPELL_TRAP)
+        val cothSuccess = testEngine.activateSetTrap(isPlayer = true, slotIndex = 1)
+        assertTrue("Call of the Haunted activated", cothSuccess)
+        assertEquals("Blue-Eyes revived in monster zone 1", "Blue-Eyes White Dragon", testEngine.player.monsterZones[1]?.card?.name)
+
+        // Canonical passcodes validation
+        assertEquals("Toon World canonical passcode", "15259703", CardPasscodeRegistry.findPasscodeByCardName("Toon World"))
+        assertEquals("Cup of Ace canonical passcode", "00441788", CardPasscodeRegistry.findPasscodeByCardName("Cup of Ace"))
+        assertEquals("Witch of the Black Forest canonical passcode", "04335645", CardPasscodeRegistry.findPasscodeByCardName("Witch of the Black Forest"))
+    }
 }
 
