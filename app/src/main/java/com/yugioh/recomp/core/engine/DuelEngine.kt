@@ -564,6 +564,17 @@ class DuelEngine {
     }
 
     /**
+     * Checks if a monster at the specified slot is eligible to declare an attack this turn.
+     */
+    fun canMonsterAttack(isPlayer: Boolean, slotIndex: Int): Boolean {
+        if (winner != null || currentPhase != DuelPhase.BATTLE_PHASE) return false
+        val duelist = if (isPlayer) player else opponent
+        if (duelist.swordsTurnsRemaining > 0) return false
+        val monster = duelist.monsterZones.getOrNull(slotIndex) ?: return false
+        return monster.canDeclareAttack
+    }
+
+    /**
      * Declares an attack from an attacking monster zone towards a target monster zone or direct attack.
      * Enforces GBA TCG battle rules or Dark Duel Stories elemental alignment dominance rules.
      */
@@ -583,8 +594,8 @@ class DuelEngine {
             log("Monsters in Defense position cannot declare attacks")
             return false
         }
-        if (attackerMonster.hasAttackedThisTurn) {
-            log("${attackerMonster.card.name} has already declared an attack this turn")
+        if (!attackerMonster.canDeclareAttack) {
+            log("${attackerMonster.card.name} has already declared its attack(s) this turn.")
             return false
         }
         if (attackerDuelist.swordsTurnsRemaining > 0) {
@@ -614,7 +625,7 @@ class DuelEngine {
                     damageToPlayer = isPlayerTurn,
                     resultSummary = "TRAP: Magic Cylinder reflected $damage damage!"
                 )
-                attackerMonster.hasAttackedThisTurn = true
+                attackerMonster.markAttacked()
                 checkWinConditions()
                 return true
             }
@@ -662,7 +673,7 @@ class DuelEngine {
                 return false
             }
 
-            attackerMonster.hasAttackedThisTurn = true
+            attackerMonster.markAttacked()
             val damage = attackerMonster.card.atk
             defenderDuelist.lifePoints = (defenderDuelist.lifePoints - damage).coerceAtLeast(0)
 
@@ -683,7 +694,7 @@ class DuelEngine {
         if (targetSlot !in 0..4) return false
         val targetMonster = defenderDuelist.monsterZones[targetSlot] ?: return false
 
-        attackerMonster.hasAttackedThisTurn = true
+        attackerMonster.markAttacked()
         val aAtk = attackerMonster.card.atk
         val dCard = targetMonster.card
 
@@ -1044,7 +1055,7 @@ class DuelEngine {
         // Attacks
         for (slot in 0 until 5) {
             val aiMonster = virtualAiMonsters[slot] ?: continue
-            if (aiMonster.position != CardPosition.FACE_UP_ATTACK || aiMonster.hasAttackedThisTurn) continue
+            if (!aiMonster.canDeclareAttack) continue
 
             val activePlayerIndices = (0 until 5).filter { virtualPlayerMonsters[it] != null }
             if (activePlayerIndices.isEmpty()) {
@@ -1060,7 +1071,7 @@ class DuelEngine {
                         announcement = "⚔ DIRECT ATTACK! ${aiMonster.card.name} strikes directly for ${aiMonster.card.atk} damage!"
                     )
                 )
-                aiMonster.hasAttackedThisTurn = true
+                aiMonster.markAttacked()
             } else {
                 // Monster attack: target monster with lower ATK, lower DEF, equal ATK, or face-down defense
                 var bestTarget: Int? = null
@@ -1129,7 +1140,7 @@ class DuelEngine {
                             announcement = attackDesc
                         )
                     )
-                    aiMonster.hasAttackedThisTurn = true
+                    aiMonster.markAttacked()
 
                     val willDestroy = if (targetMon.position == CardPosition.FACE_UP_ATTACK) {
                         aiMonster.card.atk >= defenderCard.atk

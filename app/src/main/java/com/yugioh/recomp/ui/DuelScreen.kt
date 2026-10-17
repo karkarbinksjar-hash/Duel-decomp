@@ -169,10 +169,13 @@ fun DuelScreen(
         if (engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && engine.opponent.activeMonstersCount() == 0) {
             val readySlot = engine.player.monsterZones.indices.firstOrNull { idx: Int ->
                 val m = engine.player.monsterZones[idx]
-                m != null && m.position == CardPosition.FACE_UP_ATTACK && !m.hasAttackedThisTurn
+                m != null && m.position == CardPosition.FACE_UP_ATTACK && m.canDeclareAttack
             }
-            if (readySlot != null) {
-                selectedPlayerMonsterSlot = readySlot
+            selectedPlayerMonsterSlot = readySlot
+        } else if (selectedPlayerMonsterSlot != null) {
+            val m = engine.player.monsterZones.getOrNull(selectedPlayerMonsterSlot!!)
+            if (m == null || m.position != CardPosition.FACE_UP_ATTACK || !m.canDeclareAttack) {
+                selectedPlayerMonsterSlot = null
             }
         }
     }
@@ -310,18 +313,102 @@ fun DuelScreen(
         ?: engine.player.hand.firstOrNull()?.card
         ?: engine.player.monsterZones.firstOrNull { it != null }?.card
 
-    val selectedAttacker = selectedPlayerMonsterSlot?.let { engine.player.monsterZones[it]?.card }
+    val selectedAttackerMonster = selectedPlayerMonsterSlot?.let { engine.player.monsterZones.getOrNull(it) }
+    val selectedAttacker = selectedAttackerMonster?.card
     val canDirectAttack = !isAiExecuting &&
         engine.isPlayerTurn &&
         engine.currentPhase == DuelPhase.BATTLE_PHASE &&
         selectedPlayerMonsterSlot != null &&
+        selectedAttackerMonster != null &&
+        selectedAttackerMonster.position == CardPosition.FACE_UP_ATTACK &&
+        selectedAttackerMonster.canDeclareAttack &&
         engine.opponent.activeMonstersCount() == 0
+
+    fun executePlayerAttack(targetSlot: Int?) {
+        if (isAiExecuting || !engine.isPlayerTurn || engine.currentPhase != DuelPhase.BATTLE_PHASE) return
+        val playerSlot = selectedPlayerMonsterSlot ?: return
+        val attacker = engine.player.monsterZones.getOrNull(playerSlot) ?: return
+
+        if (attacker.position != CardPosition.FACE_UP_ATTACK) {
+            engine.log("Monsters in Defense position cannot declare attacks.")
+            return
+        }
+        if (!attacker.canDeclareAttack) {
+            engine.log("${attacker.card.name} has already declared its attack(s) this turn.")
+            return
+        }
+        if (targetSlot == null && engine.opponent.activeMonstersCount() > 0) {
+            engine.log("Cannot attack directly while opponent controls monsters!")
+            return
+        }
+
+        val isDirect = (targetSlot == null)
+        val prevOppLp = engine.opponent.lifePoints
+        val prevOppMon = targetSlot?.let { engine.opponent.monsterZones.getOrNull(it) }
+        val prevPlayerMon = engine.player.monsterZones.getOrNull(playerSlot)
+
+        // Execute engine attack FIRST before any animation is triggered
+        val success = engine.declareAttack(playerSlot, targetSlot)
+        if (!success) {
+            refresh()
+            return
+        }
+
+        // Only animate when attack successfully executed!
+        selectedPlayerMonsterSlot = null
+        lungingMonsterSlot = Pair(true, playerSlot)
+        playSfx(if (isDirect) "direct" else "attack")
+        activeAttackRay = AttackRayState(
+            fromPlayer = true,
+            fromSlot = playerSlot,
+            toSlot = targetSlot,
+            isDirect = isDirect
+        )
+
+        val damageDealt = (prevOppLp - engine.opponent.lifePoints).coerceAtLeast(0)
+        if (damageDealt > 0) {
+            opponentFloatingDamage = damageDealt
+        }
+
+        refresh()
+
+        coroutineScope.launch {
+            delay(250)
+            triggerScreenShake(if (isDirect) 18f else 14f)
+
+            if (targetSlot != null && prevOppMon != null && engine.opponent.monsterZones.getOrNull(targetSlot) == null) {
+                cardDestructionSlot = Pair(false, targetSlot)
+                playSfx("destroy")
+            }
+            if (prevPlayerMon != null && engine.player.monsterZones.getOrNull(playerSlot) == null) {
+                cardDestructionSlot = Pair(true, playerSlot)
+                playSfx("destroy")
+            }
+
+            delay(350)
+            lungingMonsterSlot = null
+            delay(350)
+            cardDestructionSlot = null
+            activeAttackRay = null
+            autoTargetNextAttacker()
+            delay(600)
+            opponentFloatingDamage = null
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .offset(x = screenShakeOffsetX.dp, y = screenShakeOffsetY.dp)
-            .background(DarkFieldBackground)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF070B16),
+                        Color(0xFF0C1222),
+                        Color(0xFF070B16)
+                    )
+                )
+            )
             .statusBarsPadding()
             .navigationBarsPadding()
             .clickable(
@@ -359,84 +446,8 @@ fun DuelScreen(
                 lungingSlot = lungingMonsterSlot,
                 floatingDamage = opponentFloatingDamage,
                 onDamageTick = { playSfx("damage") },
-                onOpponentMonsterClick = { slotIdx ->
-                    if (!isAiExecuting && engine.isPlayerTurn && engine.currentPhase == DuelPhase.BATTLE_PHASE && selectedPlayerMonsterSlot != null) {
-                        val playerSlot = selectedPlayerMonsterSlot!!
-                        lungingMonsterSlot = Pair(true, playerSlot)
-                        activeAttackRay = AttackRayState(
-                            fromPlayer = true,
-                            fromSlot = playerSlot,
-                            toSlot = slotIdx,
-                            isDirect = false
-                        )
-                        playSfx("attack")
-                        val prevOppLp = engine.opponent.lifePoints
-                        val prevOppMon = engine.opponent.monsterZones[slotIdx]
-                        val prevPlayerMon = engine.player.monsterZones[playerSlot]
-                        selectedPlayerMonsterSlot = null
-
-                        coroutineScope.launch {
-                            delay(250)
-                            triggerScreenShake(14f)
-                            engine.declareAttack(playerSlot, slotIdx)
-                            refresh()
-
-                            if (prevOppMon != null && engine.opponent.monsterZones[slotIdx] == null) {
-                                cardDestructionSlot = Pair(false, slotIdx)
-                                playSfx("destroy")
-                            }
-                            if (prevPlayerMon != null && engine.player.monsterZones[playerSlot] == null) {
-                                cardDestructionSlot = Pair(true, playerSlot)
-                                playSfx("destroy")
-                            }
-
-                            val dmg = (prevOppLp - engine.opponent.lifePoints).coerceAtLeast(0)
-                            if (dmg > 0) {
-                                opponentFloatingDamage = dmg
-                            }
-
-                            delay(350)
-                            lungingMonsterSlot = null
-                            delay(350)
-                            cardDestructionSlot = null
-                            activeAttackRay = null
-                            autoTargetNextAttacker()
-                            delay(600)
-                            opponentFloatingDamage = null
-                        }
-                    }
-                },
-                onDirectAttack = {
-                    if (canDirectAttack && selectedPlayerMonsterSlot != null) {
-                        val playerSlot = selectedPlayerMonsterSlot!!
-                        val dmg = engine.player.monsterZones[playerSlot]?.card?.atk ?: 0
-                        lungingMonsterSlot = Pair(true, playerSlot)
-                        playSfx("direct")
-                        activeAttackRay = AttackRayState(
-                            fromPlayer = true,
-                            fromSlot = playerSlot,
-                            toSlot = null,
-                            isDirect = true
-                        )
-                        selectedPlayerMonsterSlot = null
-                        coroutineScope.launch {
-                            delay(300)
-                            triggerScreenShake(18f)
-                            engine.declareAttack(playerSlot, null)
-                            if (dmg > 0) {
-                                opponentFloatingDamage = dmg
-                            }
-                            refresh()
-                            delay(350)
-                            lungingMonsterSlot = null
-                            delay(400)
-                            activeAttackRay = null
-                            autoTargetNextAttacker()
-                            delay(600)
-                            opponentFloatingDamage = null
-                        }
-                    }
-                },
+                onOpponentMonsterClick = { slotIdx -> executePlayerAttack(slotIdx) },
+                onDirectAttack = { executePlayerAttack(null) },
                 onInspectCard = { card: Card ->
                     selectedFieldCard = card
                     selectedCardHandIndex = null
@@ -475,32 +486,7 @@ fun DuelScreen(
                     refresh()
                     autoTargetNextAttacker()
                 },
-                onDirectAttack = {
-                    if (canDirectAttack && selectedPlayerMonsterSlot != null) {
-                        val dmg = engine.player.monsterZones[selectedPlayerMonsterSlot!!]?.card?.atk ?: 0
-                        playSfx("attack")
-                        activeAttackRay = AttackRayState(
-                            fromPlayer = true,
-                            fromSlot = selectedPlayerMonsterSlot!!,
-                            toSlot = null,
-                            isDirect = true
-                        )
-                        engine.declareAttack(selectedPlayerMonsterSlot!!, null)
-                        selectedPlayerMonsterSlot = null
-                        if (dmg > 0) {
-                            opponentFloatingDamage = dmg
-                            playSfx("damage")
-                        }
-                        refresh()
-                        coroutineScope.launch {
-                            delay(1000)
-                            activeAttackRay = null
-                            autoTargetNextAttacker()
-                            delay(800)
-                            opponentFloatingDamage = null
-                        }
-                    }
-                }
+                onDirectAttack = { executePlayerAttack(null) }
             )
 
             PlayerSection(
@@ -539,7 +525,15 @@ fun DuelScreen(
                             if (current != null) {
                                 selectedFieldCard = current.card
                                 if (engine.currentPhase == DuelPhase.BATTLE_PHASE && engine.isPlayerTurn) {
-                                    selectedPlayerMonsterSlot = if (selectedPlayerMonsterSlot == slotIdx) null else slotIdx
+                                    if (!current.canDeclareAttack) {
+                                        selectedPlayerMonsterSlot = null
+                                        engine.log("${current.card.name} has already declared its attack(s) this turn.")
+                                    } else if (current.position != CardPosition.FACE_UP_ATTACK) {
+                                        selectedPlayerMonsterSlot = null
+                                        engine.log("Monsters in Defense position cannot declare attacks.")
+                                    } else {
+                                        selectedPlayerMonsterSlot = if (selectedPlayerMonsterSlot == slotIdx) null else slotIdx
+                                    }
                                 } else {
                                     engine.changeBattlePosition(isPlayer = true, slotIndex = slotIdx)
                                 }
@@ -653,32 +647,7 @@ fun DuelScreen(
                         }
                     },
                     canDirectAttack = canDirectAttack,
-                    onDirectAttack = {
-                        if (canDirectAttack && selectedPlayerMonsterSlot != null) {
-                            val dmg = engine.player.monsterZones[selectedPlayerMonsterSlot!!]?.card?.atk ?: 0
-                            playSfx("attack")
-                            activeAttackRay = AttackRayState(
-                                fromPlayer = true,
-                                fromSlot = selectedPlayerMonsterSlot!!,
-                                toSlot = null,
-                                isDirect = true
-                            )
-                            engine.declareAttack(selectedPlayerMonsterSlot!!, null)
-                            selectedPlayerMonsterSlot = null
-                            if (dmg > 0) {
-                                opponentFloatingDamage = dmg
-                                playSfx("damage")
-                            }
-                            refresh()
-                            coroutineScope.launch {
-                                delay(1000)
-                                activeAttackRay = null
-                                autoTargetNextAttacker()
-                                delay(800)
-                                opponentFloatingDamage = null
-                            }
-                        }
-                    }
+                    onDirectAttack = { executePlayerAttack(null) }
                 )
             }
         }
@@ -1148,7 +1117,7 @@ private fun MiddleAnimationStage(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    DuelPhase.values().forEach { phase ->
+                    DuelPhase.entries.forEach { phase ->
                         val isActive = phase == currentPhase
                         val phaseColor = when (phase) {
                             DuelPhase.DRAW_PHASE, DuelPhase.STANDBY_PHASE -> Color(0xFF38BDF8)
@@ -1255,10 +1224,10 @@ private fun MiddleAnimationStage(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "⚔ DECLARE DIRECT ATTACK!",
+                                "⚔ DIRECT ATTACK! TAP TO STRIKE",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
-                                fontSize = 13.sp
+                                fontSize = 12.5.sp
                             )
                             selectedAttacker?.let {
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -1345,6 +1314,9 @@ private fun PlayerSection(
                     val mCard = player.monsterZones[slot]
                     val isAttackerSelected = selectedPlayerMonsterSlot == slot
                     val isEligibleSummonSlot = selectedCard?.isMonster == true && mCard == null
+                    val canAttackNow = isPlayerTurn && currentPhase == DuelPhase.BATTLE_PHASE && mCard != null && mCard.canDeclareAttack
+                    val hasAlreadyAttacked = isPlayerTurn && currentPhase == DuelPhase.BATTLE_PHASE && mCard != null && !mCard.canDeclareAttack
+
                     val isSummonAnim = animatingSummonSlot != null &&
                         animatingSummonSlot.first &&
                         animatingSummonSlot.second == slot
@@ -1363,6 +1335,8 @@ private fun PlayerSection(
                         isOpponent = false,
                         highlighted = isAttackerSelected || isEligibleSummonSlot,
                         isAttackingSource = isAttackerSelected,
+                        canAttackNow = canAttackNow && !isAttackerSelected,
+                        hasAlreadyAttacked = hasAlreadyAttacked,
                         isLunging = isPlayerLunging,
                         isSummonAnimating = isSummonAnim,
                         isDestructionAnimating = isDestructionAnim,
@@ -1829,40 +1803,55 @@ private fun HandCarouselAndControls(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            val nextPhaseName = when (currentPhase) {
+                DuelPhase.DRAW_PHASE -> "Standby ▶"
+                DuelPhase.STANDBY_PHASE -> "Main Phase 1 ▶"
+                DuelPhase.MAIN_PHASE_1 -> "⚔ Battle Phase ▶"
+                DuelPhase.BATTLE_PHASE -> "Main Phase 2 ▶"
+                DuelPhase.MAIN_PHASE_2 -> "End Phase ▶"
+                DuelPhase.END_PHASE -> "End Turn ▶"
+            }
+            val phaseButtonColor = when (currentPhase) {
+                DuelPhase.MAIN_PHASE_1 -> Color(0xFFB91C1C) // Crimson leading to Battle
+                DuelPhase.BATTLE_PHASE -> Color(0xFF1D4ED8) // Sapphire leading to M2
+                else -> Color(0xFF2563EB)
+            }
+            val phaseBorderColor = when (currentPhase) {
+                DuelPhase.MAIN_PHASE_1 -> Color(0xFFFCA5A5)
+                DuelPhase.BATTLE_PHASE -> Color(0xFF93C5FD)
+                else -> Color(0xFF60A5FA)
+            }
+
             Button(
                 onClick = onAdvancePhase,
                 enabled = isPlayerTurn && currentPhase != DuelPhase.END_PHASE,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1D4ED8),
+                    containerColor = phaseButtonColor,
                     disabledContainerColor = Color(0xFF1E293B)
                 ),
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) Color(0xFF60A5FA) else Color(0xFF334155)),
+                border = BorderStroke(1.dp, if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) phaseBorderColor else Color(0xFF334155)),
                 modifier = Modifier
                     .weight(1f)
                     .height(40.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("▶▶", fontSize = 11.sp, color = if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) MillenniumGold else Color(0xFF64748B))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Next Phase",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) Color.White else Color(0xFF64748B)
-                    )
-                }
+                Text(
+                    text = nextPhaseName,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isPlayerTurn && currentPhase != DuelPhase.END_PHASE) Color.White else Color(0xFF64748B)
+                )
             }
 
             Button(
                 onClick = onEndTurn,
                 enabled = isPlayerTurn,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFB91C1C),
+                    containerColor = Color(0xFF334155),
                     disabledContainerColor = Color(0xFF1E293B)
                 ),
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, if (isPlayerTurn) Color(0xFFF87171) else Color(0xFF334155)),
+                border = BorderStroke(1.dp, if (isPlayerTurn) Color(0xFF64748B) else Color(0xFF334155)),
                 modifier = Modifier
                     .weight(1f)
                     .height(40.dp)
@@ -1872,7 +1861,7 @@ private fun HandCarouselAndControls(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "End Turn",
-                        fontSize = 11.5.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isPlayerTurn) Color.White else Color(0xFF64748B)
                     )
@@ -1893,25 +1882,40 @@ private fun ZoneSlot(
     isOpponent: Boolean,
     highlighted: Boolean,
     isAttackingSource: Boolean = false,
+    canAttackNow: Boolean = false,
+    hasAlreadyAttacked: Boolean = false,
     isLunging: Boolean = false,
     isSummonAnimating: Boolean = false,
     isDestructionAnimating: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "zonePulse")
+    val attackPulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "atkPulse"
+    )
+
     val borderColor = when {
-        isLunging || isAttackingSource -> AttackRed
+        isLunging || isAttackingSource -> Color(0xFF00F2FE)
+        canAttackNow -> Color(0xFFF59E0B).copy(alpha = attackPulseAlpha)
         highlighted -> MillenniumGold
+        hasAlreadyAttacked -> Color(0xFF334155)
         duelCard != null -> Color(0xFF475569)
         isSpellTrap -> Color(0xFF1E3A8A)
         else -> ZoneBorderGreen
     }
 
     val backgroundColor = when {
+        hasAlreadyAttacked -> Color(0xFF0C0F17)
         duelCard != null -> Color(0xFF131722)
         isSpellTrap -> Color(0xFF0C101A)
         else -> Color(0xFF0F1A15)
     }
+
+    val finalAlpha = if (hasAlreadyAttacked) 0.55f else 1.0f
 
     // Physical Card Lunge Animation towards the opponent/player
     val lungeTargetY = if (isLunging) (if (isOpponent) 32f else -32f) else 0f
@@ -1959,12 +1963,12 @@ private fun ZoneSlot(
                 scaleX = animatedSummonScale * lungeScale * destructionScale
                 scaleY = animatedSummonScale * lungeScale * destructionScale
                 rotationZ = destructionRotation
-                alpha = destructionAlpha
+                alpha = destructionAlpha * finalAlpha
             }
             .clip(RoundedCornerShape(4.dp))
             .background(backgroundColor)
             .border(
-                width = if (highlighted || isAttackingSource || isLunging) 2.dp else 1.dp,
+                width = if (highlighted || isAttackingSource || isLunging || canAttackNow) 2.dp else 1.dp,
                 color = borderColor,
                 shape = RoundedCornerShape(4.dp)
             )
@@ -2096,6 +2100,50 @@ private fun ZoneSlot(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 2.dp)
                         )
+                    }
+
+                    if (hasAlreadyAttacked) {
+                        Surface(
+                            color = Color(0xEE0F172A),
+                            shape = RoundedCornerShape(2.dp),
+                            modifier = Modifier.align(Alignment.Center)
+                        ) {
+                            Text(
+                                text = "✓ ATTACKED",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 6.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                            )
+                        }
+                    } else if (isAttackingSource) {
+                        Surface(
+                            color = Color(0xEE0E7490),
+                            shape = RoundedCornerShape(2.dp),
+                            modifier = Modifier.align(Alignment.Center)
+                        ) {
+                            Text(
+                                text = "⚔ ATTACKING",
+                                color = Color(0xFFE0F2FE),
+                                fontSize = 6.5.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                            )
+                        }
+                    } else if (canAttackNow) {
+                        Surface(
+                            color = Color(0xEE78350F),
+                            shape = RoundedCornerShape(2.dp),
+                            modifier = Modifier.align(Alignment.Center)
+                        ) {
+                            Text(
+                                text = "⚔ READY",
+                                color = Color(0xFFFEF08A),
+                                fontSize = 6.5.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                            )
+                        }
                     }
                 }
             }

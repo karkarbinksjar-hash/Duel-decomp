@@ -19,9 +19,28 @@ data class DuelCard(
     val card: Card,
     var position: CardPosition = CardPosition.FACE_UP_ATTACK,
     var hasAttackedThisTurn: Boolean = false,
+    var attacksDeclaredThisTurn: Int = 0,
     var canChangePosition: Boolean = true,
     var turnsOnField: Int = 0
 ) {
+    val maxAttacksPerTurn: Int
+        get() = if (card.name == "Hayabusa Knight" || card.name == "Mataza the Zapper") 2 else 1
+
+    val canDeclareAttack: Boolean
+        get() = position == CardPosition.FACE_UP_ATTACK && attacksDeclaredThisTurn < maxAttacksPerTurn
+
+    fun markAttacked() {
+        attacksDeclaredThisTurn++
+        hasAttackedThisTurn = (attacksDeclaredThisTurn >= maxAttacksPerTurn)
+    }
+
+    fun resetTurnActions() {
+        attacksDeclaredThisTurn = 0
+        hasAttackedThisTurn = false
+        canChangePosition = true
+        turnsOnField++
+    }
+
     companion object {
         private val ID_GEN = AtomicLong(1000)
     }
@@ -67,11 +86,7 @@ class Duelist(
     fun resetTurnActions() {
         if (swordsTurnsRemaining > 0) swordsTurnsRemaining--
         for (monster in monsterZones) {
-            if (monster != null) {
-                monster.hasAttackedThisTurn = false
-                monster.canChangePosition = true
-                monster.turnsOnField++
-            }
+            monster?.resetTurnActions()
         }
     }
 }
