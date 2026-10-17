@@ -1286,4 +1286,178 @@ class DuelEngineTest {
         assertEquals(2700, testEngine.getEffectiveAtk(darkMagician))
         assertEquals(2300, testEngine.getEffectiveDef(darkMagician))
     }
+
+    @Test
+    fun testActivateSetSpellCard() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Tea Gardner")
+
+        val potOfGreed = Card(
+            id = 501,
+            name = "Pot of Greed",
+            atk = 0,
+            def = 0,
+            level = 0,
+            attribute = CardAttribute.SPELL,
+            cardType = CardType.SPELL
+        )
+        testEngine.player.hand.add(DuelCard(card = potOfGreed))
+        val handIdx = testEngine.player.hand.size - 1
+
+        // Set the Spell card onto zone 0
+        assertTrue("Set Spell card to zone 0", testEngine.setSpellTrap(isPlayer = true, handIndex = handIdx, slotIndex = 0))
+        assertNotNull("Zone 0 contains set card", testEngine.player.spellTrapZones[0])
+        assertEquals("Pot of Greed", testEngine.player.spellTrapZones[0]?.card?.name)
+
+        val handSizeBefore = testEngine.player.hand.size
+
+        // Activate the set Spell card
+        val activated = testEngine.activateSetSpell(isPlayer = true, slotIndex = 0)
+        assertTrue("Set spell activation succeeds in Main Phase", activated)
+        assertNull("Set spell leaves spell/trap zone after resolution", testEngine.player.spellTrapZones[0])
+        assertEquals("Pot of Greed draws 2 cards", handSizeBefore + 2, testEngine.player.hand.size)
+        assertTrue("Pot of Greed is sent to Graveyard", testEngine.player.graveyard.any { it.name == "Pot of Greed" })
+    }
+
+    @Test
+    fun testFusionSummoningWithPolymerization() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Extra Deck contains classic Fusion Monsters
+        assertTrue("Extra Deck initialized with Fusion Monsters", testEngine.player.extraDeck.isNotEmpty())
+        assertTrue("Extra Deck contains Twin-Headed Thunder Dragon", testEngine.player.extraDeck.any { it.name == "Twin-Headed Thunder Dragon" })
+
+        // Give player 2x Thunder Dragon materials and 1x Polymerization
+        val thunderDragon1 = Card(id = 701, name = "Thunder Dragon", atk = 1600, def = 1500, level = 5, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.THUNDER)
+        val thunderDragon2 = Card(id = 702, name = "Thunder Dragon", atk = 1600, def = 1500, level = 5, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.THUNDER)
+        val poly = FusionRitualRegistry.POLYMERIZATION
+
+        testEngine.player.hand.add(DuelCard(card = thunderDragon1))
+        testEngine.player.hand.add(DuelCard(card = thunderDragon2))
+        testEngine.player.hand.add(DuelCard(card = poly))
+
+        val polyIndex = testEngine.player.hand.size - 1
+        assertTrue("Activate Polymerization", testEngine.activateSpell(isPlayer = true, handIndex = polyIndex))
+
+        // Monster zone must now contain Twin-Headed Thunder Dragon (2800 ATK)
+        val summonedFusion = testEngine.player.monsterZones.filterNotNull().find { it.card.name == "Twin-Headed Thunder Dragon" }
+        assertNotNull("Twin-Headed Thunder Dragon was Fusion Summoned to field", summonedFusion)
+        assertEquals(2800, summonedFusion?.card?.atk)
+        assertEquals(CardPosition.FACE_UP_ATTACK, summonedFusion?.position)
+
+        // Materials must be in the Graveyard
+        assertEquals(2, testEngine.player.graveyard.count { it.name == "Thunder Dragon" })
+    }
+
+    @Test
+    fun testRitualSummoningSystem() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Yugi Muto")
+
+        val bls = FusionRitualRegistry.BLACK_LUSTER_SOLDIER
+        val ritualSpell = FusionRitualRegistry.BLACK_LUSTER_RITUAL
+        val tribute1 = Card(id = 801, name = "Judge Man", atk = 2200, def = 1500, level = 6, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
+        val tribute2 = Card(id = 802, name = "Celtic Guardian", atk = 1400, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
+
+        // Hand has BLS, Ritual Spell, and tributes totaling 10 levels (>= 8 required)
+        testEngine.player.hand.add(DuelCard(card = bls))
+        testEngine.player.hand.add(DuelCard(card = tribute1))
+        testEngine.player.hand.add(DuelCard(card = tribute2))
+        testEngine.player.hand.add(DuelCard(card = ritualSpell))
+
+        val spellIdx = testEngine.player.hand.size - 1
+        assertTrue("Activate Black Luster Ritual", testEngine.activateSpell(isPlayer = true, handIndex = spellIdx))
+
+        val blsOnField = testEngine.player.monsterZones.filterNotNull().find { it.card.name == "Black Luster Soldier" }
+        assertNotNull("Black Luster Soldier was Ritual Summoned", blsOnField)
+        assertEquals(3000, blsOnField?.card?.atk)
+        assertEquals(2500, blsOnField?.card?.def)
+    }
+
+    @Test
+    fun testEquipSpellStatBoostAndDestructionBurn() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Seto Kaiba")
+
+        // Summon a monster
+        val monster = Card(id = 901, name = "Axe Raider", atk = 1700, def = 1150, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER)
+        testEngine.player.monsterZones[0] = DuelCard(card = monster, position = CardPosition.FACE_UP_ATTACK)
+
+        // Equip Axe of Despair (+1000 ATK)
+        val axe = FusionRitualRegistry.AXE_OF_DESPAIR
+        testEngine.player.hand.add(DuelCard(card = axe))
+        testEngine.activateSpell(isPlayer = true, handIndex = testEngine.player.hand.size - 1)
+
+        val duelMonster = testEngine.player.monsterZones[0]!!
+        assertEquals("Axe of Despair equipped", 1, duelMonster.equippedCards.size)
+        assertEquals(2700, testEngine.getEffectiveAtk(duelMonster.card, duelMonster))
+
+        // Equip Black Pendant (+500 ATK)
+        val pendant = Card(id = 902, name = "Black Pendant", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL)
+        testEngine.player.hand.add(DuelCard(card = pendant))
+        testEngine.activateSpell(isPlayer = true, handIndex = testEngine.player.hand.size - 1)
+
+        assertEquals("Two equip cards attached", 2, duelMonster.equippedCards.size)
+        assertEquals(3200, testEngine.getEffectiveAtk(duelMonster.card, duelMonster))
+
+        // Put higher ATK monster on opponent's field and declare battle to trigger destruction
+        val oppBoss = Card(id = 999, name = "Blue-Eyes White Dragon", atk = 3500, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = oppBoss, position = CardPosition.FACE_UP_ATTACK)
+
+        testEngine.nextPhase() // Advance from MAIN_PHASE_1 to BATTLE_PHASE
+        val oppLpBefore = testEngine.opponent.lifePoints
+        testEngine.declareAttack(attackerSlot = 0, targetSlot = 0)
+
+        assertNull("Axe Raider was destroyed by Blue-Eyes", testEngine.player.monsterZones[0])
+        // Black Pendant sent to graveyard inflicts 500 damage to opponent!
+        assertEquals("Opponent took 500 effect damage from Black Pendant destruction", oppLpBefore - 500, testEngine.opponent.lifePoints)
+    }
+
+    @Test
+    fun testSavedDeckRecipesAndPasscodeExportImport() {
+        GbaCampaignManager.activeDeck.clear()
+        GbaCampaignManager.trunk.clear()
+
+        val card1 = GbaCardCatalog.ARMORED_LIZARD
+        val card2 = GbaCardCatalog.SUMMONED_SKULL_GBA
+        val card3 = GbaCardCatalog.RAIGEKI
+
+        GbaCampaignManager.activeDeck.addAll(listOf(card1, card2, card3))
+
+        // Save to Slot 2
+        GbaCampaignManager.saveCurrentDeckToSlot(2, "My Beatdown Deck")
+        val recipe = GbaCampaignManager.savedDeckRecipes.find { it.id == 2 }
+        assertNotNull("Recipe saved", recipe)
+        assertEquals("My Beatdown Deck", recipe?.name)
+        assertEquals(3, recipe?.cardIds?.size)
+
+        // Export passcodes
+        val exportStr = GbaCampaignManager.exportDeckToPasscodes()
+        assertTrue("Export string contains Armored Lizard passcode", exportStr.contains("15480588"))
+        assertTrue("Export string contains Summoned Skull passcode", exportStr.contains("70781052"))
+
+        // Import passcodes
+        val (count, msg) = GbaCampaignManager.importDeckFromPasscodes("15480588, 70781052, 12580477")
+        assertEquals(3, count)
+        assertTrue(msg.contains("Successfully imported"))
+        assertEquals(3, GbaCampaignManager.activeDeck.size)
+    }
+
+    @Test
+    fun testCustomDuelSettingsAndSandboxArena() {
+        val testEngine = DuelEngine()
+        // Test custom 4000 LP speed duel
+        testEngine.startDuel(opponentName = "Joey Wheeler", startingLp = 4000)
+        assertEquals(4000, testEngine.player.lifePoints)
+        assertEquals(4000, testEngine.opponent.lifePoints)
+
+        // Test mirror match with custom opponent deck
+        val customDeck = listOf(GbaCardCatalog.ARMORED_LIZARD, GbaCardCatalog.BATTLE_OX_GBA)
+        val mirrorEngine = DuelEngine()
+        mirrorEngine.startDuel(opponentName = "Mirror Clone", startingLp = 2000, customOpponentDeck = customDeck)
+        assertEquals(2000, mirrorEngine.player.lifePoints)
+        assertEquals("Mirror Clone", mirrorEngine.opponent.name)
+    }
 }
+

@@ -54,6 +54,7 @@ fun CampaignHubScreen(
     }
     var selectedTierFilter by remember { mutableStateOf(0) } // 0 = All, 1..5
     var currentStarterDeck by remember { mutableStateOf(GbaCampaignManager.currentStarterDeckType) }
+    var showSandboxDialog by remember { mutableStateOf(false) }
 
     val ddsOpponents = remember {
         listOf(
@@ -554,32 +555,163 @@ fun CampaignHubScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Start Duel Button
-            Button(
-                onClick = {
-                    if (isDeckReady) {
-                        onStartDuel(selectedOpponent)
+            // Action Buttons: Sandbox + Start Duel
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Button(
+                    onClick = { showSandboxDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, MillenniumGold),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                ) {
+                    Text(
+                        text = "⚙️ SANDBOX",
+                        color = MillenniumGold,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        if (isDeckReady) {
+                            GbaCampaignManager.customDuelSettings.startingLp = 8000
+                            GbaCampaignManager.customDuelSettings.isMirrorMatch = false
+                            onStartDuel(selectedOpponent)
+                        }
+                    },
+                    enabled = isDeckReady,
+                    colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(2f)
+                        .height(46.dp)
+                        .border(1.5.dp, if (isDeckReady) MillenniumGold else Color.Transparent, RoundedCornerShape(8.dp))
+                ) {
+                    Text(
+                        text = when {
+                            !isOpponentTierUnlocked -> "Tier Locked"
+                            !isDeckReady -> "Fix 40-Card Deck"
+                            else -> "⚔ START DUEL vs $selectedOpponent"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 11.5.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        if (showSandboxDialog) {
+            var lpSelection by remember { mutableStateOf(GbaCampaignManager.customDuelSettings.startingLp) }
+            var isMirror by remember { mutableStateOf(GbaCampaignManager.customDuelSettings.isMirrorMatch) }
+            var enableAlignment by remember { mutableStateOf(GbaCampaignManager.customDuelSettings.enableDdsAlignment) }
+
+            AlertDialog(
+                onDismissRequest = { showSandboxDialog = false },
+                title = {
+                    Text(
+                        text = "⚙️ Custom Duel & Sandbox Rules",
+                        color = MillenniumGold,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Configure custom rule variants, starting LP, and opponent conditions for sandbox testing.",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 10.5.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Starting Life Points:", color = MillenniumGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf(2000, 4000, 8000, 16000).forEach { lpVal ->
+                                val isSelected = lpSelection == lpVal
+                                Surface(
+                                    color = if (isSelected) MillenniumGold else Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { lpSelection = lpVal }
+                                ) {
+                                    Text(
+                                        text = "$lpVal LP",
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { isMirror = !isMirror },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Mirror Match (Clone Deck)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Opponent battles with an exact clone of your active deck", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                            }
+                            Switch(
+                                checked = isMirror,
+                                onCheckedChange = { isMirror = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = MillenniumGold)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { enableAlignment = !enableAlignment },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("GBC Elemental Dominance", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Dark Duel Stories elemental wheel destroys disadvantaged monsters", color = Color(0xFF94A3B8), fontSize = 9.sp)
+                            }
+                            Switch(
+                                checked = enableAlignment,
+                                onCheckedChange = { enableAlignment = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = MillenniumGold)
+                            )
+                        }
                     }
                 },
-                enabled = isDeckReady,
-                colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp)
-                    .border(1.5.dp, if (isDeckReady) MillenniumGold else Color.Transparent, RoundedCornerShape(8.dp))
-            ) {
-                Text(
-                    text = when {
-                        !isOpponentTierUnlocked -> "Tier Locked - Defeat Earlier Duelists"
-                        !isDeckReady -> "Fix 40-Card Deck to Duel"
-                        else -> "⚔ START DUEL vs $selectedOpponent"
-                    },
-                    color = Color.White,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.5.sp
-                )
-            }
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            GbaCampaignManager.customDuelSettings.startingLp = lpSelection
+                            GbaCampaignManager.customDuelSettings.isMirrorMatch = isMirror
+                            GbaCampaignManager.customDuelSettings.enableDdsAlignment = enableAlignment
+                            showSandboxDialog = false
+                            onStartDuel(if (isMirror) "Mirror Clone" else selectedOpponent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AttackRed)
+                    ) {
+                        Text("⚔ Enter Sandbox Duel", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSandboxDialog = false }) {
+                        Text("Cancel", color = Color(0xFF94A3B8))
+                    }
+                },
+                containerColor = Color(0xFF141A29)
+            )
         }
 
         // Optional LCD Shader overlay

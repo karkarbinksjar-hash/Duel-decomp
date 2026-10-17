@@ -81,7 +81,14 @@ fun DuelScreen(
             } else {
                 DdsCampaignManager.selectedOpponentName
             }
-            startDuel(opp)
+            val settings = GbaCampaignManager.customDuelSettings
+            enableDdsAlignmentRule = settings.enableDdsAlignment
+            val customOppDeck = if (settings.isMirrorMatch) GbaCampaignManager.activeDeck.toList() else null
+            startDuel(
+                opponentName = if (settings.isMirrorMatch) "Mirror Clone" else opp,
+                startingLp = settings.startingLp,
+                customOpponentDeck = customOppDeck
+            )
         }
     }
 
@@ -101,11 +108,13 @@ fun DuelScreen(
     var isShaderEnabled by remember { mutableStateOf(DdsCampaignManager.isGbcLcdShaderEnabled) }
     var selectedCardHandIndex by remember { mutableStateOf<Int?>(null) }
     var selectedPlayerMonsterSlot by remember { mutableStateOf<Int?>(null) }
+    var selectedPlayerSpellTrapSlot by remember { mutableStateOf<Int?>(null) }
     var selectedOpponentSlot by remember { mutableStateOf<Int?>(null) }
     var selectedFieldCard by remember { mutableStateOf<Card?>(null) }
     var inspectingCard by remember { mutableStateOf<Card?>(null) }
     var viewingGraveyardTitle by remember { mutableStateOf<String?>(null) }
     var viewingGraveyardCards by remember { mutableStateOf<List<Card>?>(null) }
+    var viewingExtraDeckCards by remember { mutableStateOf<List<Card>?>(null) }
     var tributePromptState by remember { mutableStateOf<TributePromptState?>(null) }
 
     // Animations & Sequencer States
@@ -671,9 +680,35 @@ fun DuelScreen(
                         refresh()
                     } else if (!isAiExecuting && engine.player.spellTrapZones[slotIdx] != null) {
                         val st = engine.player.spellTrapZones[slotIdx]!!
-                        if (st.card.isTrap) {
+                        selectedPlayerSpellTrapSlot = slotIdx
+                        selectedFieldCard = st.card
+                        selectedCardHandIndex = null
+                        selectedPlayerMonsterSlot = null
+
+                        if (st.card.isSpell) {
+                            if (engine.currentPhase in listOf(DuelPhase.MAIN_PHASE_1, DuelPhase.MAIN_PHASE_2)) {
+                                playSfx("spell")
+                                val success = engine.activateSetSpell(isPlayer = true, slotIndex = slotIdx)
+                                if (success) {
+                                    announcePhase("⚡ ACTIVATED [${st.card.name}]!")
+                                    selectedPlayerSpellTrapSlot = null
+                                }
+                                refresh()
+                            } else {
+                                coroutineScope.launch {
+                                    phaseBannerText = "⚠️ Spells activate during Main Phase!"
+                                    delay(1000)
+                                    phaseBannerText = null
+                                }
+                                engine.log("Can only activate Spells during Main Phase 1 or 2.")
+                            }
+                        } else if (st.card.isTrap) {
                             playSfx("spell")
-                            engine.activateSetTrap(isPlayer = true, slotIndex = slotIdx)
+                            val success = engine.activateSetTrap(isPlayer = true, slotIndex = slotIdx)
+                            if (success) {
+                                announcePhase("⚠ ACTIVATED [${st.card.name}]!")
+                                selectedPlayerSpellTrapSlot = null
+                            }
                             refresh()
                         }
                     }
@@ -686,6 +721,9 @@ fun DuelScreen(
                 onOpenGraveyard = {
                     viewingGraveyardTitle = "${engine.player.name}'s Graveyard"
                     viewingGraveyardCards = engine.player.graveyard.toList()
+                },
+                onOpenExtraDeck = {
+                    viewingExtraDeckCards = engine.player.extraDeck.toList()
                 }
             )
 
@@ -703,6 +741,7 @@ fun DuelScreen(
                     hand = engine.player.hand,
                     selectedCardIndex = selectedCardHandIndex,
                     selectedPlayerMonster = selectedAttacker,
+                    selectedSetSpellTrap = selectedPlayerSpellTrapSlot?.let { engine.player.spellTrapZones.getOrNull(it) },
                     currentPhase = engine.currentPhase,
                     isPlayerTurn = engine.isPlayerTurn && !isAiExecuting,
                     hasSummoned = engine.hasNormalSummonedThisTurn,
@@ -714,6 +753,7 @@ fun DuelScreen(
                             selectedFieldCard = selectedCardHandIndex?.let { engine.player.hand.getOrNull(it)?.card }
                             selectedPlayerMonsterSlot = null
                             selectedOpponentSlot = null
+                            selectedPlayerSpellTrapSlot = null
                         }
                     },
                     onSummonAttack = {
@@ -808,6 +848,34 @@ fun DuelScreen(
                             refresh()
                         }
                     },
+                    onActivateSetSpellTrap = {
+                        selectedPlayerSpellTrapSlot?.let { slotIdx ->
+                            val st = engine.player.spellTrapZones.getOrNull(slotIdx)
+                            if (st != null) {
+                                if (st.card.isSpell) {
+                                    if (engine.currentPhase in listOf(DuelPhase.MAIN_PHASE_1, DuelPhase.MAIN_PHASE_2)) {
+                                        playSfx("spell")
+                                        val ok = engine.activateSetSpell(isPlayer = true, slotIndex = slotIdx)
+                                        if (ok) announcePhase("⚡ ACTIVATED [${st.card.name}]!")
+                                        selectedPlayerSpellTrapSlot = null
+                                        refresh()
+                                    } else {
+                                        coroutineScope.launch {
+                                            phaseBannerText = "⚠️ Spells activate during Main Phase!"
+                                            delay(1000)
+                                            phaseBannerText = null
+                                        }
+                                    }
+                                } else if (st.card.isTrap) {
+                                    playSfx("spell")
+                                    val ok = engine.activateSetTrap(isPlayer = true, slotIndex = slotIdx)
+                                    if (ok) announcePhase("⚠ ACTIVATED [${st.card.name}]!")
+                                    selectedPlayerSpellTrapSlot = null
+                                    refresh()
+                                }
+                            }
+                        }
+                    },
                     onAdvancePhase = {
                         if (!isAiExecuting) {
                             playSfx("draw")
@@ -861,11 +929,19 @@ fun DuelScreen(
                 onResume = { isMenuOpen = false },
                 onRestart = {
                     val oppName = if (isGba) GbaCampaignManager.selectedOpponentName else DdsCampaignManager.selectedOpponentName
-                    engine.startDuel(oppName)
+                    val settings = GbaCampaignManager.customDuelSettings
+                    engine.enableDdsAlignmentRule = settings.enableDdsAlignment
+                    val customOppDeck = if (settings.isMirrorMatch) GbaCampaignManager.activeDeck.toList() else null
+                    engine.startDuel(
+                        opponentName = if (settings.isMirrorMatch) "Mirror Clone" else oppName,
+                        startingLp = settings.startingLp,
+                        customOpponentDeck = customOppDeck
+                    )
                     selectedCardHandIndex = null
                     selectedPlayerMonsterSlot = null
                     selectedOpponentSlot = null
                     selectedFieldCard = null
+                    selectedPlayerSpellTrapSlot = null
                     isMenuOpen = false
                     refresh()
                 },
@@ -900,6 +976,15 @@ fun DuelScreen(
                 cards = gyCards,
                 onCardClick = { card -> inspectingCard = card },
                 onDismiss = { viewingGraveyardCards = null }
+            )
+        }
+
+        viewingExtraDeckCards?.let { exCards ->
+            GraveyardDialog(
+                title = "Extra Deck (Fusion Monsters)",
+                cards = exCards,
+                onCardClick = { card -> inspectingCard = card },
+                onDismiss = { viewingExtraDeckCards = null }
             )
         }
 
@@ -1123,6 +1208,24 @@ private fun OpponentSection(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (canDirectAttack) {
+                        Surface(
+                            color = Color(0x33DC2626),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier
+                                .border(1.dp, AttackRed, RoundedCornerShape(4.dp))
+                                .clickable { onDirectAttack() }
+                        ) {
+                            Text(
+                                text = "🎯 UNGUARDED",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
                     Surface(
                         color = Color(0xFF1E2230),
                         shape = RoundedCornerShape(4.dp),
@@ -1179,27 +1282,6 @@ private fun OpponentSection(
                 color = gaugeColor,
                 trackColor = Color(0xFF1E2436)
             )
-
-            if (canDirectAttack) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Surface(
-                    color = Color(0x33DC2626),
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.5.dp, AttackRed, RoundedCornerShape(6.dp))
-                        .clickable { onDirectAttack() }
-                ) {
-                    Text(
-                        text = "🎯 OPPONENT UNGUARDED! TAP TO ATTACK DIRECTLY! ⚔",
-                        color = Color(0xFFFCA5A5),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 10.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 3.dp)
-                    )
-                }
-            }
 
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -1401,30 +1483,35 @@ private fun MiddleAnimationStage(
                         opponentName = opponentName
                     )
                 } else if (canDirectAttack) {
-                    Button(
-                        onClick = onDirectAttack,
-                        colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
-                        shape = RoundedCornerShape(8.dp),
+                    Surface(
+                        color = Color(0x33DC2626),
+                        shape = RoundedCornerShape(6.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
-                            .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
-                            .border(2.dp, MillenniumGold, RoundedCornerShape(8.dp))
+                            .border(1.dp, AttackRed, RoundedCornerShape(6.dp))
+                            .clickable { onDirectAttack() }
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                "⚔ DIRECT ATTACK! TAP TO STRIKE",
-                                color = Color.White,
+                                "⚔ OPPONENT OPEN! TAP TO ATTACK DIRECTLY",
+                                color = Color(0xFFFCA5A5),
                                 fontWeight = FontWeight.Black,
-                                fontSize = 12.5.sp
+                                fontSize = 10.sp,
+                                letterSpacing = 0.5.sp
                             )
                             selectedAttacker?.let {
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     "(-${it.atk} LP)",
                                     color = MillenniumGold,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
+                                    fontSize = 10.sp
                                 )
                             }
                         }
@@ -1542,7 +1629,8 @@ private fun PlayerSection(
     onMonsterZoneClick: (Int) -> Unit,
     onSpellZoneClick: (Int) -> Unit,
     onInspectCard: (Card) -> Unit,
-    onOpenGraveyard: () -> Unit
+    onOpenGraveyard: () -> Unit,
+    onOpenExtraDeck: () -> Unit = {}
 ) {
     Surface(
         color = Color(0xFF141724),
@@ -1691,6 +1779,24 @@ private fun PlayerSection(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (player.extraDeck.isNotEmpty()) {
+                        Surface(
+                            color = Color(0xFF3B184F),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier
+                                .clickable { onOpenExtraDeck() }
+                                .border(0.5.dp, Color(0xFFC084FC), RoundedCornerShape(4.dp))
+                        ) {
+                            Text(
+                                text = "EX: ${player.extraDeck.size}",
+                                color = Color(0xFFE9D5FF),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
                     Surface(
                         color = Color(0xFF1E2230),
                         shape = RoundedCornerShape(4.dp),
@@ -1895,6 +2001,7 @@ private fun HandCarouselAndControls(
     hand: List<DuelCard>,
     selectedCardIndex: Int?,
     selectedPlayerMonster: Card?,
+    selectedSetSpellTrap: DuelCard? = null,
     currentPhase: DuelPhase,
     isPlayerTurn: Boolean,
     hasSummoned: Boolean,
@@ -1905,6 +2012,7 @@ private fun HandCarouselAndControls(
     onSetDefense: () -> Unit,
     onActivateSpell: () -> Unit,
     onSetSpellTrap: () -> Unit,
+    onActivateSetSpellTrap: () -> Unit = {},
     onAdvancePhase: () -> Unit,
     onEndTurn: () -> Unit,
     canDirectAttack: Boolean = false,
@@ -1913,6 +2021,46 @@ private fun HandCarouselAndControls(
     val selectedCard = selectedCardIndex?.let { hand.getOrNull(it)?.card }
 
     Column(modifier = Modifier.fillMaxWidth()) {
+        if (selectedSetSpellTrap != null && selectedCard == null) {
+            val isSpell = selectedSetSpellTrap.card.isSpell
+            val actionBg = if (isSpell) Color(0xFF0D9488) else Color(0xFFBE185D)
+            Surface(
+                color = Color(0xFF1E2435),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+                    .border(1.dp, actionBg, RoundedCornerShape(8.dp))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Set: ${selectedSetSpellTrap.card.name} (${if (isSpell) "Spell" else "Trap"})",
+                        color = if (isSpell) Color(0xFF5EEAD4) else Color(0xFFF472B6),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Button(
+                        onClick = onActivateSetSpellTrap,
+                        colors = ButtonDefaults.buttonColors(containerColor = actionBg),
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (isSpell) "⚡ ACTIVATE SPELL" else "⚠ ACTIVATE TRAP",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
+            }
+        }
+
         if (selectedPlayerMonster != null && selectedCard == null) {
             Surface(
                 color = Color(0xFF1E2435),
@@ -2071,6 +2219,25 @@ private fun HandCarouselAndControls(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            if (canDirectAttack) {
+                Button(
+                    onClick = onDirectAttack,
+                    colors = ButtonDefaults.buttonColors(containerColor = AttackRed),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.5.dp, MillenniumGold),
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .height(40.dp)
+                ) {
+                    Text(
+                        text = "⚔ DIRECT ATTACK!",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White
+                    )
+                }
+            }
+
             val nextPhaseName = when (currentPhase) {
                 DuelPhase.DRAW_PHASE -> "Standby ▶"
                 DuelPhase.STANDBY_PHASE -> "Main Phase 1 ▶"

@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -69,6 +70,11 @@ fun DeckConstructionScreen(
     var selectedTypeFilter by remember { mutableStateOf(CardTypeFilter.ALL) }
     var selectedLevelFilter by remember { mutableStateOf(0) } // 0=All, 1=Lv1-4, 2=Lv5-6, 3=Lv7+
     var selectedSortOption by remember { mutableStateOf(CardSortOption.ATK_DESC) }
+
+    var selectedRecipeSlot by remember { mutableStateOf(1) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importInputText by remember { mutableStateOf("") }
 
     val activeDeck = if (isGba) GbaCampaignManager.activeDeck else DdsCampaignManager.activeDeck
     val trunk = if (isGba) GbaCampaignManager.trunk else DdsCampaignManager.trunk
@@ -217,6 +223,107 @@ fun DeckConstructionScreen(
                             fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+            }
+
+            if (isGba) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    color = Color(0xFF0F172A),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth().border(0.5.dp, Color(0xFF334155), RoundedCornerShape(6.dp))
+                ) {
+                    Column(modifier = Modifier.padding(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val activeRecipe = GbaCampaignManager.savedDeckRecipes.find { it.id == selectedRecipeSlot }
+                            Text(
+                                text = "RECIPES: ${activeRecipe?.name ?: "Slot $selectedRecipeSlot"}",
+                                color = MillenniumGold,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Button(
+                                    onClick = {
+                                        GbaCampaignManager.saveCurrentDeckToSlot(selectedRecipeSlot)
+                                        statusMessage = "💾 Saved active deck to Slot $selectedRecipeSlot!"
+                                        refresh()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.height(22.dp)
+                                ) {
+                                    Text("Save", fontSize = 8.5.sp, color = Color(0xFF93C5FD))
+                                }
+                                Button(
+                                    onClick = {
+                                        val ok = GbaCampaignManager.loadDeckFromSlot(selectedRecipeSlot)
+                                        if (ok) {
+                                            statusMessage = "📂 Loaded Slot $selectedRecipeSlot into active deck!"
+                                        } else {
+                                            statusMessage = "⚠ Slot $selectedRecipeSlot is empty! Save a deck first."
+                                        }
+                                        refresh()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.height(22.dp)
+                                ) {
+                                    Text("Load", fontSize = 8.5.sp, color = Color(0xFF86EFAC))
+                                }
+                                Button(
+                                    onClick = { showExportDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.height(22.dp)
+                                ) {
+                                    Text("📤 Export", fontSize = 8.5.sp, color = Color(0xFFFDE047))
+                                }
+                                Button(
+                                    onClick = { showImportDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 1.dp),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.height(22.dp)
+                                ) {
+                                    Text("📥 Import", fontSize = 8.5.sp, color = Color(0xFFF472B6))
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            for (slot in 1..5) {
+                                val isSelected = selectedRecipeSlot == slot
+                                Surface(
+                                    color = if (isSelected) MillenniumGold else Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { selectedRecipeSlot = slot }
+                                ) {
+                                    Text(
+                                        text = "Slot $slot",
+                                        color = if (isSelected) Color.Black else Color(0xFF94A3B8),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -507,6 +614,86 @@ fun DeckConstructionScreen(
         // Card Detail Dialog
         inspectingCard?.let { card ->
             CardDetailDialog(card = card, onDismiss = { inspectingCard = null })
+        }
+
+        if (showExportDialog) {
+            val passcodes = GbaCampaignManager.exportDeckToPasscodes()
+            AlertDialog(
+                onDismissRequest = { showExportDialog = false },
+                title = { Text("Export Deck Passcodes", color = MillenniumGold, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("Copy these official 8-digit passcodes to share or backup your deck:", color = Color.White, fontSize = 11.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        SelectionContainer {
+                            Surface(
+                                color = Color(0xFF0F172A),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF334155), RoundedCornerShape(6.dp))
+                            ) {
+                                Text(
+                                    text = passcodes,
+                                    color = Color(0xFF86EFAC),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showExportDialog = false }) {
+                        Text("Close", color = MillenniumGold, fontWeight = FontWeight.Bold)
+                    }
+                },
+                containerColor = Color(0xFF1A1C29)
+            )
+        }
+
+        if (showImportDialog) {
+            AlertDialog(
+                onDismissRequest = { showImportDialog = false },
+                title = { Text("Import Deck Passcodes", color = MillenniumGold, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("Paste comma-separated or space-separated 8-digit card passcodes:", color = Color.White, fontSize = 11.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = importInputText,
+                            onValueChange = { importInputText = it },
+                            modifier = Modifier.fillMaxWidth().height(120.dp),
+                            placeholder = { Text("e.g. 15480588, 89631139, 46986414...", fontSize = 10.sp, color = Color(0xFF64748B)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MillenniumGold,
+                                unfocusedBorderColor = Color(0xFF334155),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val (count, msg) = GbaCampaignManager.importDeckFromPasscodes(importInputText)
+                            statusMessage = msg
+                            showImportDialog = false
+                            importInputText = ""
+                            refresh()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MillenniumGold)
+                    ) {
+                        Text("Import", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showImportDialog = false }) {
+                        Text("Cancel", color = Color(0xFF94A3B8))
+                    }
+                },
+                containerColor = Color(0xFF1A1C29)
+            )
         }
     }
 }
