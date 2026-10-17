@@ -143,6 +143,33 @@ object ChiptuneSynthesizer {
     }
 
     /**
+     * Defeat Fanfare chiptune (Descending somber minor progression)
+     */
+    fun createDefeatFanfare(): ShortArray {
+        return synthesizeArpeggio(listOf(440.0, 392.0, 349.23, 329.63, 293.66, 220.0), 130)
+    }
+
+    /**
+     * Spell Activation shimmering chiptune SFX
+     */
+    fun createSpellActivationSfx(): ShortArray {
+        return synthesizeArpeggio(listOf(329.63, 440.0, 554.37, 659.25, 880.0, 1108.73), 45)
+    }
+
+    /**
+     * Card Flip snappy swoosh SFX
+     */
+    fun createCardFlipSfx(): ShortArray {
+        val noise = synthesizeNoise(60, decay = true)
+        val pulse = synthesizePulse(400.0, 60, 0.25, decay = true)
+        val combined = ShortArray(noise.size)
+        for (i in combined.indices) {
+            combined[i] = ((noise[i].toInt() + pulse[i].toInt()) / 2).toShort()
+        }
+        return combined
+    }
+
+    /**
      * Safe playback on Android device/emulator. Fails gracefully in JVM unit tests.
      */
     fun playSfx(samples: ShortArray) {

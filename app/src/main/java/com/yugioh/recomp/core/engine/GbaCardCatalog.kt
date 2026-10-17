@@ -1538,4 +1538,7 @@ object GbaCardCatalog {
         DIAN_KETO_GBA,
         SKULL_DICE
     )
+
+    fun getCardByName(name: String): Card? = ALL_GBA_CARDS.find { it.name.equals(name, ignoreCase = true) }
+    fun getCardById(id: Int): Card? = ALL_GBA_CARDS.find { it.id == id }
 }

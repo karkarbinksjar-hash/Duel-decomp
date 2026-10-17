@@ -161,6 +161,9 @@ fun DuelScreen(
             "destroy" -> ChiptuneSynthesizer.createCardDestructionSfx()
             "direct" -> ChiptuneSynthesizer.createDirectAttackSfx()
             "victory" -> ChiptuneSynthesizer.createVictoryFanfare()
+            "defeat" -> ChiptuneSynthesizer.createDefeatFanfare()
+            "spell" -> ChiptuneSynthesizer.createSpellActivationSfx()
+            "flip" -> ChiptuneSynthesizer.createCardFlipSfx()
             else -> ChiptuneSynthesizer.createCardDrawSfx()
         }
         ChiptuneSynthesizer.playSfx(sfx)
@@ -480,18 +483,24 @@ fun DuelScreen(
         }
     }
 
+    val fieldBackgroundColors = remember(engine.activeFieldSpell?.name) {
+        when (engine.activeFieldSpell?.name) {
+            "Yami" -> listOf(Color(0xFF1E0B38), Color(0xFF0F051D), Color(0xFF17082C))
+            "Umi" -> listOf(Color(0xFF09223D), Color(0xFF051321), Color(0xFF071A2E))
+            "Mountain" -> listOf(Color(0xFF1A2333), Color(0xFF0F1521), Color(0xFF151C2B))
+            "Sogen" -> listOf(Color(0xFF063F30), Color(0xFF02241B), Color(0xFF053125))
+            "Forest" -> listOf(Color(0xFF104424), Color(0xFF052713), Color(0xFF0D361D))
+            "Wasteland" -> listOf(Color(0xFF381503), Color(0xFF170800), Color(0xFF2B1002))
+            else -> listOf(Color(0xFF070B16), Color(0xFF0C1222), Color(0xFF070B16))
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .offset(x = screenShakeOffsetX.dp, y = screenShakeOffsetY.dp)
             .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF070B16),
-                        Color(0xFF0C1222),
-                        Color(0xFF070B16)
-                    )
-                )
+                Brush.verticalGradient(fieldBackgroundColors)
             )
             .statusBarsPadding()
             .navigationBarsPadding()
@@ -3116,6 +3125,14 @@ private fun WinnerOverlay(
 ) {
     val isPlayerWin = winnerName == "Yugi"
 
+    LaunchedEffect(isPlayerWin) {
+        if (isPlayerWin) {
+            ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createVictoryFanfare())
+        } else {
+            ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createDefeatFanfare())
+        }
+    }
+
     Surface(
         color = Color(0xF2090D18),
         modifier = Modifier.fillMaxSize()
@@ -3134,6 +3151,23 @@ private fun WinnerOverlay(
                 fontWeight = FontWeight.Black,
                 letterSpacing = 2.sp
             )
+
+            if (isPlayerWin) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.border(1.dp, MillenniumGold, RoundedCornerShape(6.dp))
+                ) {
+                    Text(
+                        text = "⭐ +5 Starchips Awarded for Password Machine!",
+                        color = MillenniumGold,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

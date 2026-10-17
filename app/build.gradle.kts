@@ -11,8 +11,8 @@ android {
         applicationId = "com.yugioh.recomp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "2.9.0"
+        versionCode = 25
+        versionName = "2.10.0"
         setProperty("archivesBaseName", "Duel-decomp")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

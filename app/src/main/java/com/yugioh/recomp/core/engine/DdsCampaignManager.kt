@@ -49,6 +49,11 @@ object DdsCampaignManager {
      */
     var isGbcLcdShaderEnabled: Boolean = true
 
+    /**
+     * Starchips currency earned from duel victories, used in the Password Machine.
+     */
+    var starchips: Int = 30
+
     init {
         resetToNewGame()
     }
@@ -58,6 +63,7 @@ object DdsCampaignManager {
      */
     fun resetToNewGame() {
         deckCapacity = 400
+        starchips = 30
         activeDeck.clear()
         activeDeck.addAll(getCanonicalStarterDeck())
         trunk.clear()
@@ -123,12 +129,13 @@ object DdsCampaignManager {
 
     /**
      * Handles post-duel victory or defeat according to DDS rules:
-     * - Victory: +3 Deck Capacity, records win, awards 1 card drop from opponent.
+     * - Victory: +3 Deck Capacity, records win, awards 1 card drop from opponent, +5 Starchips.
      * - Defeat: +2 Deck Capacity.
      */
     fun recordDuelResult(opponentName: String, won: Boolean): Card? {
         if (won) {
             deckCapacity = (deckCapacity + 3).coerceAtMost(9999)
+            starchips = (starchips + 5).coerceAtMost(9999)
             opponentWins[opponentName] = (opponentWins[opponentName] ?: 0) + 1
             val droppedCard = rollOpponentDrop(opponentName)
             if (droppedCard != null) {
@@ -139,6 +146,27 @@ object DdsCampaignManager {
             deckCapacity = (deckCapacity + 2).coerceAtMost(9999)
             return null
         }
+    }
+
+    /**
+     * Unlocks a card via 8-digit official card passcode using Starchips.
+     */
+    fun unlockCardViaPasscode(code: String): Pair<Boolean, String> {
+        val cleanCode = code.trim().padStart(8, '0')
+        val cardName = CardPasscodeRegistry.findCardNameByPasscode(cleanCode)
+            ?: return Pair(false, "Invalid passcode: No card found for [$cleanCode].")
+
+        val card = DdsCardCatalog.getCardByName(cardName)
+            ?: Card(id = 8000 + trunk.size, name = cardName, atk = 1500, def = 1200, level = 4, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.WARRIOR)
+
+        val cost = (card.deckCost * 2).coerceIn(5, 50)
+        if (starchips < cost) {
+            return Pair(false, "Requires $cost Starchips! You currently have $starchips ⭐.")
+        }
+
+        starchips -= cost
+        trunk.add(card)
+        return Pair(true, "Successfully unlocked [${card.name}] for $cost Starchips! (Remaining: $starchips ⭐)")
     }
 
     /**

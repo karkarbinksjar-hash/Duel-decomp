@@ -3,11 +3,14 @@ package com.yugioh.recomp.ui
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +37,21 @@ enum class DeckBuilderTab {
     TRUNK
 }
 
+enum class CardTypeFilter(val label: String) {
+    ALL("All"),
+    MONSTER("Monsters"),
+    SPELL("Spells"),
+    TRAP("Traps")
+}
+
+enum class CardSortOption(val label: String) {
+    ATK_DESC("ATK ↓"),
+    DEF_DESC("DEF ↓"),
+    LEVEL_DESC("★ Level ↓"),
+    NAME_ASC("A-Z"),
+    COST_DESC("Cost ↓")
+}
+
 @Composable
 fun DeckConstructionScreen(
     onNavigateBack: () -> Unit
@@ -46,12 +64,49 @@ fun DeckConstructionScreen(
     var updateCounter by remember { mutableStateOf(0) }
     fun refresh() { updateCounter++ }
 
+    // Search, Filter & Sort states
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedTypeFilter by remember { mutableStateOf(CardTypeFilter.ALL) }
+    var selectedLevelFilter by remember { mutableStateOf(0) } // 0=All, 1=Lv1-4, 2=Lv5-6, 3=Lv7+
+    var selectedSortOption by remember { mutableStateOf(CardSortOption.ATK_DESC) }
+
     val activeDeck = if (isGba) GbaCampaignManager.activeDeck else DdsCampaignManager.activeDeck
     val trunk = if (isGba) GbaCampaignManager.trunk else DdsCampaignManager.trunk
     val totalCost = if (isGba) 0 else DdsCampaignManager.totalDeckCost()
     val maxDc = if (isGba) 0 else DdsCampaignManager.deckCapacity
     val duelistLevel = if (isGba) 0 else DdsCampaignManager.duelistLevel
     val isDeckValid = if (isGba) activeDeck.size in 40..60 else (activeDeck.size == 40 && totalCost <= maxDc)
+
+    val rawCards = if (selectedTab == DeckBuilderTab.ACTIVE_DECK) activeDeck else trunk
+
+    val displayedCards = remember(rawCards, searchQuery, selectedTypeFilter, selectedLevelFilter, selectedSortOption, updateCounter) {
+        rawCards
+            .filter { card ->
+                val matchesQuery = searchQuery.isBlank() || card.name.contains(searchQuery.trim(), ignoreCase = true)
+                val matchesType = when (selectedTypeFilter) {
+                    CardTypeFilter.ALL -> true
+                    CardTypeFilter.MONSTER -> card.isMonster
+                    CardTypeFilter.SPELL -> card.isSpell
+                    CardTypeFilter.TRAP -> card.isTrap
+                }
+                val matchesLevel = when (selectedLevelFilter) {
+                    1 -> card.isMonster && card.level in 1..4
+                    2 -> card.isMonster && card.level in 5..6
+                    3 -> card.isMonster && card.level >= 7
+                    else -> true
+                }
+                matchesQuery && matchesType && matchesLevel
+            }
+            .let { list ->
+                when (selectedSortOption) {
+                    CardSortOption.ATK_DESC -> list.sortedWith(compareByDescending<Card> { it.atk }.thenBy { it.name })
+                    CardSortOption.DEF_DESC -> list.sortedWith(compareByDescending<Card> { it.def }.thenBy { it.name })
+                    CardSortOption.LEVEL_DESC -> list.sortedWith(compareByDescending<Card> { it.level }.thenByDescending { it.atk })
+                    CardSortOption.NAME_ASC -> list.sortedBy { it.name }
+                    CardSortOption.COST_DESC -> list.sortedWith(compareByDescending<Card> { it.deckCost }.thenBy { it.name })
+                }
+            }
+    }
 
     Box(
         modifier = Modifier
@@ -72,7 +127,7 @@ fun DeckConstructionScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MillenniumGold)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MillenniumGold)
                 }
                 Text(
                     text = if (isGba) "GBA DECK CONSTRUCTION" else "DECK CONSTRUCTION",
@@ -95,7 +150,7 @@ fun DeckConstructionScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             // Deck Capacity & Card Count Meter
             Surface(
@@ -114,16 +169,37 @@ fun DeckConstructionScreen(
                         Text(
                             text = if (isGba) "Format: Battle City TCG" else "Deck Capacity: $totalCost / $maxDc DC",
                             color = if (isGba || totalCost <= maxDc) MillenniumGold else AttackRed,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = "Cards: ${activeDeck.size} / 40",
                             color = if (activeDeck.size in 40..60) LifePointGreen else AttackRed,
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    // Breakdown counts
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Deck: ⚔ ${activeDeck.count { it.isMonster }} Mon | ❇ ${activeDeck.count { it.isSpell }} Spell | ⚠ ${activeDeck.count { it.isTrap }} Trap",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "Trunk: ${trunk.size}",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
@@ -138,7 +214,7 @@ fun DeckConstructionScreen(
                                 "⚠ Total Cost exceeds Deck Capacity ($maxDc DC)!"
                             },
                             color = AttackRed,
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -147,11 +223,11 @@ fun DeckConstructionScreen(
 
             // Status flash message
             statusMessage?.let { msg ->
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Surface(
-                    color = Color(0xFF7F1D1D),
+                    color = Color(0xFF1E293B),
                     shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MillenniumGold, RoundedCornerShape(4.dp))
                 ) {
                     Text(
                         text = msg,
@@ -164,7 +240,7 @@ fun DeckConstructionScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Tab Selector: Active Deck vs Trunk
             Row(
@@ -181,7 +257,7 @@ fun DeckConstructionScreen(
                     }
                 )
                 TabButton(
-                    title = "Trunk / Chest (${trunk.size})",
+                    title = "Trunk Chest (${trunk.size})",
                     isSelected = selectedTab == DeckBuilderTab.TRUNK,
                     modifier = Modifier.weight(1f),
                     onClick = {
@@ -191,59 +267,234 @@ fun DeckConstructionScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Card Grid View
-            val displayedCards = if (selectedTab == DeckBuilderTab.ACTIVE_DECK) activeDeck else trunk
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+            // Search Bar
+            Surface(
+                color = Color(0xFF131826),
+                shape = RoundedCornerShape(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(6.dp))
             ) {
-                items(displayedCards) { card ->
-                    DeckCardItem(
-                        card = card,
-                        duelistLevel = if (isGba) 999 else duelistLevel,
-                        isFromDeck = selectedTab == DeckBuilderTab.ACTIVE_DECK,
-                        onClick = {
-                            if (selectedTab == DeckBuilderTab.ACTIVE_DECK) {
-                                val removed = if (isGba) GbaCampaignManager.removeCardFromDeck(card) else DdsCampaignManager.removeCardFromDeck(card)
-                                if (removed) {
-                                    ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
-                                    statusMessage = "Moved [${card.name}] to Trunk."
-                                    refresh()
-                                }
-                            } else {
-                                if (isGba) {
-                                    val added = GbaCampaignManager.addCardToDeck(card)
-                                    if (added) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = MillenniumGold,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search card name...", color = Color(0xFF64748B), fontSize = 11.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f).height(44.dp)
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Filter Chips Row: Type & Level
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Type filters
+                items(CardTypeFilter.values()) { type ->
+                    val isSelected = selectedTypeFilter == type
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedTypeFilter = type },
+                        label = { Text(type.label, fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MillenniumGold,
+                            selectedLabelColor = Color.Black,
+                            containerColor = Color(0xFF1E2433),
+                            labelColor = Color(0xFF94A3B8)
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = if (isSelected) MillenniumGold else Color(0xFF334155)
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+
+                // Level filters (Monsters)
+                item {
+                    val isSelected = selectedLevelFilter == 1
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedLevelFilter = if (isSelected) 0 else 1 },
+                        label = { Text("★ 1-4", fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF2563EB),
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFF1E2433),
+                            labelColor = Color(0xFF94A3B8)
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+
+                item {
+                    val isSelected = selectedLevelFilter == 2
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedLevelFilter = if (isSelected) 0 else 2 },
+                        label = { Text("★ 5-6 (1 Trib)", fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF7C3AED),
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFF1E2433),
+                            labelColor = Color(0xFF94A3B8)
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+
+                item {
+                    val isSelected = selectedLevelFilter == 3
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedLevelFilter = if (isSelected) 0 else 3 },
+                        label = { Text("★ 7+ (2 Trib)", fontSize = 9.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFDC2626),
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFF1E2433),
+                            labelColor = Color(0xFF94A3B8)
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            // Sort Options Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Sort by:",
+                    color = Color(0xFF64748B),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CardSortOption.values().forEach { opt ->
+                        val isSelected = selectedSortOption == opt
+                        Surface(
+                            color = if (isSelected) Color(0xFF334155) else Color(0xFF141926),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier
+                                .border(1.dp, if (isSelected) MillenniumGold else Color(0xFF252D3F), RoundedCornerShape(4.dp))
+                                .clickable { selectedSortOption = opt }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = opt.label,
+                                color = if (isSelected) MillenniumGold else Color(0xFF94A3B8),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Card Grid View
+            if (displayedCards.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No cards matching the selected filters.",
+                        color = Color(0xFF64748B),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(displayedCards) { card ->
+                        DeckCardItem(
+                            card = card,
+                            duelistLevel = if (isGba) 999 else duelistLevel,
+                            isFromDeck = selectedTab == DeckBuilderTab.ACTIVE_DECK,
+                            onClick = {
+                                if (selectedTab == DeckBuilderTab.ACTIVE_DECK) {
+                                    val removed = if (isGba) GbaCampaignManager.removeCardFromDeck(card) else DdsCampaignManager.removeCardFromDeck(card)
+                                    if (removed) {
                                         ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
-                                        statusMessage = "Added [${card.name}] to Deck."
+                                        statusMessage = "Moved [${card.name}] to Trunk."
                                         refresh()
-                                    } else {
-                                        statusMessage = "Cannot add more than 3 copies of [${card.name}] or exceed 60 cards!"
                                     }
                                 } else {
-                                    val (canAdd, reason) = DdsCampaignManager.canAddCard(card)
-                                    if (canAdd) {
-                                        DdsCampaignManager.addCardToDeck(card)
-                                        ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
-                                        statusMessage = "Added [${card.name}] to Deck."
-                                        refresh()
+                                    if (isGba) {
+                                        val added = GbaCampaignManager.addCardToDeck(card)
+                                        if (added) {
+                                            ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
+                                            statusMessage = "Added [${card.name}] to Deck."
+                                            refresh()
+                                        } else {
+                                            statusMessage = "Cannot add more than 3 copies of [${card.name}] or exceed 60 cards!"
+                                        }
                                     } else {
-                                        statusMessage = reason
+                                        val (canAdd, reason) = DdsCampaignManager.canAddCard(card)
+                                        if (canAdd) {
+                                            DdsCampaignManager.addCardToDeck(card)
+                                            ChiptuneSynthesizer.playSfx(ChiptuneSynthesizer.createCardDrawSfx())
+                                            statusMessage = "Added [${card.name}] to Deck."
+                                            refresh()
+                                        } else {
+                                            statusMessage = reason
+                                        }
                                     }
                                 }
+                            },
+                            onLongClick = {
+                                inspectingCard = card
                             }
-                        },
-                        onLongClick = {
-                            inspectingCard = card
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -273,7 +524,7 @@ private fun TabButton(
             containerColor = if (isSelected) MillenniumGold else Color(0xFF1E293B)
         ),
         shape = RoundedCornerShape(6.dp),
-        modifier = modifier.height(38.dp)
+        modifier = modifier.height(36.dp)
     ) {
         Text(
             text = title,

@@ -37,6 +37,16 @@ class DuelEngine {
 
     var lastTriggeredTrap: Pair<String, Int>? = null
 
+    var lastActivatedSpell: Pair<String, String>? = null
+
+    private val tempControlledMonsters = mutableListOf<TempControlRecord>()
+
+    data class TempControlRecord(
+        val monster: DuelCard,
+        val originalOwner: Duelist,
+        val currentHolder: Duelist
+    )
+
     var lastRewardCard: Card? = null
         private set
 
@@ -571,6 +581,7 @@ class DuelEngine {
 
         duelist.hand.removeAt(handIndex)
         duelist.spellTrapZones[tempSlot] = DuelCard(card = card, position = CardPosition.FACE_UP_ATTACK)
+        lastActivatedSpell = Pair(card.name, duelist.name)
         log("${duelist.name} activated Spell: [${card.name}]!")
 
         when (card.name) {
@@ -600,25 +611,38 @@ class DuelEngine {
                     val s = duelist.firstEmptyMonsterSlot()
                     if (s != -1) {
                         duelist.monsterZones[s] = DuelCard(card = revived, position = CardPosition.FACE_UP_ATTACK)
-                        log("${duelist.name} Special Summoned [${revived.name}] from Graveyard via Monster Reborn!")
+                        log("✨ MONSTER REBORN: ${duelist.name} Special Summoned [${revived.name}] (ATK ${revived.atk}) from the Graveyard!")
                     }
                 }
             }
             "Change of Heart", "Snatch Steal" -> {
                 val opp = if (isPlayer) opponent else player
-                val oppSlot = (0 until 5).firstOrNull { opp.monsterZones[it] != null }
+                val oppSlot = (0 until 5)
+                    .filter { opp.monsterZones[it] != null }
+                    .maxByOrNull { opp.monsterZones[it]!!.card.atk }
                 val mySlot = duelist.firstEmptyMonsterSlot()
                 if (oppSlot != null && mySlot != -1) {
                     val stolen = opp.monsterZones[oppSlot]!!
                     opp.monsterZones[oppSlot] = null
                     duelist.monsterZones[mySlot] = stolen
-                    log("${duelist.name} took control of [${stolen.card.name}] via ${card.name}!")
+                    if (card.name == "Change of Heart") {
+                        tempControlledMonsters.add(TempControlRecord(stolen, originalOwner = opp, currentHolder = duelist))
+                    }
+                    log("💖 CHANGE OF HEART: ${duelist.name} took control of [${stolen.card.name}] (ATK ${stolen.card.atk}) until end of turn!")
                 }
             }
             "Swords of Revealing Light" -> {
                 val opp = if (isPlayer) opponent else player
                 opp.swordsTurnsRemaining = 3
-                log("Swords of Revealing Light prevents ${opp.name} from attacking for 3 turns!")
+                var revealedCount = 0
+                for (i in 0 until 5) {
+                    val m = opp.monsterZones[i]
+                    if (m != null && m.position == CardPosition.FACE_DOWN_DEFENSE) {
+                        m.position = CardPosition.FACE_UP_DEFENSE
+                        revealedCount++
+                    }
+                }
+                log("⚔️ SWORDS OF REVEALING LIGHT: ${duelist.name} illuminated the field! Revealed $revealedCount face-down monster(s). ${opp.name} cannot attack for 3 turns.")
             }
             "Raigeki" -> {
                 val opp = if (isPlayer) opponent else player
@@ -1196,6 +1220,26 @@ class DuelEngine {
         val currentDuelist = if (isPlayerTurn) player else opponent
         currentDuelist.resetTurnActions()
 
+        // Return temporary controlled monsters (Change of Heart)
+        val returning = tempControlledMonsters.toList()
+        for (record in returning) {
+            val (m, orig, holder) = record
+            val currentSlot = (0 until 5).firstOrNull { holder.monsterZones[it] === m }
+            if (currentSlot != null) {
+                holder.monsterZones[currentSlot] = null
+                val returnSlot = orig.firstEmptyMonsterSlot()
+                if (returnSlot != -1) {
+                    orig.monsterZones[returnSlot] = m
+                    log("Change of Heart expired: [${m.card.name}] returned to ${orig.name}'s control.")
+                } else {
+                    orig.graveyard.add(m.card)
+                    log("Change of Heart expired: [${m.card.name}] sent to ${orig.name}'s Graveyard (no open zones).")
+                }
+            }
+        }
+        tempControlledMonsters.clear()
+        lastActivatedSpell = null
+
         isPlayerTurn = !isPlayerTurn
         hasNormalSummonedThisTurn = false
         clashState = null
@@ -1261,8 +1305,9 @@ class DuelEngine {
         val playableSpells = opponent.hand.filter { it.card.isSpell }
         for (dc in playableSpells) {
             val c = dc.card
-            if (c.name in listOf("Pot of Greed", "Graceful Charity", "Raigeki", "Dark Hole", "Monster Reborn", "Snatch Steal", "Change of Heart", "Swords of Revealing Light", "Harpie's Feather Duster", "Heavy Storm", "Dian Keto the Cure Maiden", "Sparks", "Hinotama", "Mooyan Curry")) {
-                steps.add(AiTurnStep.ActivateSpell(c, "${opponent.name} activates Spell: [${c.name}]!"))
+            if (AiDuelTactics.shouldActivateSpell(opponent.name, c, opponent.monsterZones.toList(), player.monsterZones.toList(), opponent.lifePoints, player.lifePoints)) {
+                val taunt = AiDuelTactics.getProfile(opponent.name).spellTauntQuote
+                steps.add(AiTurnStep.ActivateSpell(c, "${opponent.name}: \"$taunt\" [${c.name}]!"))
                 break
             }
         }
@@ -1299,24 +1344,36 @@ class DuelEngine {
                 virtualAiMonsters[activeMonsters[0]] = null
                 virtualAiMonsters[tribute2] = null
                 virtualAiMonsters[targetSlot] = DuelCard(card = boss.card, position = CardPosition.FACE_UP_ATTACK)
+                val bossQuote = AiDuelTactics.getBossSummonDialogue(opponent.name, boss.card.name)
+                val summonMsg = if (bossQuote != null) {
+                    "⚡ ${opponent.name}: \"$bossQuote\""
+                } else {
+                    "⚡ TRIBUTE SUMMON! ${opponent.name} sacrifices 2 monsters to summon [${boss.card.name}]! (ATK ${boss.card.atk})"
+                }
                 steps.add(
                     AiTurnStep.SummonMonster(
                         boss.card,
                         targetSlot,
                         isDefense = false,
-                        "⚡ TRIBUTE SUMMON! ${opponent.name} sacrifices 2 monsters to summon [${boss.card.name}]! (ATK ${boss.card.atk})"
+                        summonMsg
                     )
                 )
             } else if (level5or6.isNotEmpty() && activeMonsters.isNotEmpty()) {
                 val boss = level5or6.maxByOrNull { it.card.atk }!!
                 val targetSlot = activeMonsters.first()
                 virtualAiMonsters[targetSlot] = DuelCard(card = boss.card, position = CardPosition.FACE_UP_ATTACK)
+                val bossQuote = AiDuelTactics.getBossSummonDialogue(opponent.name, boss.card.name)
+                val summonMsg = if (bossQuote != null) {
+                    "⚡ ${opponent.name}: \"$bossQuote\""
+                } else {
+                    "⚡ TRIBUTE SUMMON! ${opponent.name} sacrifices a monster to summon [${boss.card.name}]! (ATK ${boss.card.atk})"
+                }
                 steps.add(
                     AiTurnStep.SummonMonster(
                         boss.card,
                         targetSlot,
                         isDefense = false,
-                        "⚡ TRIBUTE SUMMON! ${opponent.name} sacrifices a monster to summon [${boss.card.name}]! (ATK ${boss.card.atk})"
+                        summonMsg
                     )
                 )
             } else if (level1to4.isNotEmpty()) {

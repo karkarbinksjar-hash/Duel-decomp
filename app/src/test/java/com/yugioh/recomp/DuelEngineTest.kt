@@ -1147,4 +1147,143 @@ class DuelEngineTest {
         assertTrue("Vorse Raider should be in Graveyard", testEngine.player.graveyard.any { it.name == "Vorse Raider" })
         assertTrue("Trap Hole should be in opponent Graveyard", testEngine.opponent.graveyard.any { it.name == "Trap Hole" })
     }
+
+    @Test
+    fun testMonsterRebornRevivesHighestAtkMonsterFromGraveyard() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Put a powerful monster in opponent's Graveyard (Blue-Eyes White Dragon 3000 ATK)
+        val blueEyes = Card(id = 1, name = "Blue-Eyes White Dragon", atk = 3000, def = 2500, level = 8, attribute = CardAttribute.LIGHT, cardType = CardType.MONSTER, monsterType = MonsterType.DRAGON)
+        val kuriboh = Card(id = 5, name = "Kuriboh", atk = 300, def = 200, level = 1, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.FIEND)
+        testEngine.opponent.graveyard.add(blueEyes)
+        testEngine.player.graveyard.add(kuriboh)
+
+        // Player activates Monster Reborn from hand
+        val monsterReborn = Card(id = 500, name = "Monster Reborn", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL, monsterType = MonsterType.NONE)
+        testEngine.player.hand.add(DuelCard(card = monsterReborn))
+        val handIdx = testEngine.player.hand.size - 1
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = handIdx)
+        assertTrue("Monster Reborn activation succeeds", activated)
+
+        // Player should now control Blue-Eyes White Dragon on their field!
+        val summoned = testEngine.player.monsterZones.filterNotNull().firstOrNull()
+        assertNotNull("Monster Reborn must summon a monster to field", summoned)
+        assertEquals("Should revive highest ATK monster across Graveyards (Blue-Eyes)", "Blue-Eyes White Dragon", summoned?.card?.name)
+        assertFalse("Blue-Eyes removed from opponent Graveyard", testEngine.opponent.graveyard.any { it.name == "Blue-Eyes White Dragon" })
+    }
+
+    @Test
+    fun testSwordsOfRevealingLightFlipsFaceDownAndBlocksAttack() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent has 1 facedown defense monster
+        val stoneGiant = Card(id = 12, name = "Giant Soldier of Stone", atk = 1300, def = 2000, level = 3, attribute = CardAttribute.EARTH, cardType = CardType.MONSTER, monsterType = MonsterType.ROCK)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = stoneGiant, position = CardPosition.FACE_DOWN_DEFENSE)
+
+        // Player activates Swords of Revealing Light
+        val swords = Card(id = 501, name = "Swords of Revealing Light", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL, monsterType = MonsterType.NONE)
+        testEngine.player.hand.add(DuelCard(card = swords))
+        val handIdx = testEngine.player.hand.size - 1
+
+        val activated = testEngine.activateSpell(isPlayer = true, handIndex = handIdx)
+        assertTrue("Swords of Revealing Light activated", activated)
+
+        // Monster should be flipped face-up defense
+        val oppMon = testEngine.opponent.monsterZones[0]
+        assertNotNull(oppMon)
+        assertEquals("Facedown monster flipped to FACE_UP_DEFENSE", CardPosition.FACE_UP_DEFENSE, oppMon?.position)
+        assertEquals("Swords turns set to 3", 3, testEngine.opponent.swordsTurnsRemaining)
+
+        // Opponent turn: Battle phase attacks should be blocked
+        testEngine.passTurn(autoRunAi = false)
+        testEngine.nextPhase() // BATTLE_PHASE
+        assertFalse("Opponent cannot declare attack while Swords active", testEngine.declareAttack(0, null))
+    }
+
+    @Test
+    fun testChangeOfHeartStealsAndReturnsAtEndOfTurn() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        // Opponent has Vorse Raider
+        val vorseRaider = Card(id = 10, name = "Vorse Raider", atk = 1900, def = 1200, level = 4, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.BEAST_WARRIOR)
+        testEngine.opponent.monsterZones[0] = DuelCard(card = vorseRaider, position = CardPosition.FACE_UP_ATTACK)
+
+        // Player activates Change of Heart
+        val changeOfHeart = Card(id = 502, name = "Change of Heart", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL, monsterType = MonsterType.NONE)
+        testEngine.player.hand.add(DuelCard(card = changeOfHeart))
+        val handIdx = testEngine.player.hand.size - 1
+
+        assertTrue("Change of Heart activates", testEngine.activateSpell(isPlayer = true, handIndex = handIdx))
+
+        // Player controls Vorse Raider now
+        assertNull("Opponent lost control of Vorse Raider", testEngine.opponent.monsterZones[0])
+        val stolen = testEngine.player.monsterZones.filterNotNull().firstOrNull()
+        assertNotNull("Player now has stolen monster", stolen)
+        assertEquals("Vorse Raider", stolen?.card?.name)
+
+        // End player turn -> monster returns to opponent
+        testEngine.passTurn(autoRunAi = false)
+        assertNull("Player no longer has stolen monster", testEngine.player.monsterZones[0])
+        assertNotNull("Vorse Raider returned to opponent's field", testEngine.opponent.monsterZones[0])
+        assertEquals("Vorse Raider", testEngine.opponent.monsterZones[0]?.card?.name)
+    }
+
+    @Test
+    fun testPasswordMachineUnlocksValidCard() {
+        com.yugioh.recomp.core.engine.DdsCampaignManager.resetToNewGame()
+        com.yugioh.recomp.core.engine.DdsCampaignManager.starchips = 100
+
+        val (success, message) = com.yugioh.recomp.core.engine.DdsCampaignManager.unlockCardViaPasscode("89631139")
+        assertTrue("Valid passcode for Blue-Eyes White Dragon should succeed", success)
+        assertTrue("Message confirms unlock", message.contains("Blue-Eyes White Dragon"))
+        assertTrue("Card is in Trunk", com.yugioh.recomp.core.engine.DdsCampaignManager.trunk.any { it.name == "Blue-Eyes White Dragon" })
+        assertTrue("Starchips were deducted", com.yugioh.recomp.core.engine.DdsCampaignManager.starchips < 100)
+    }
+
+    @Test
+    fun testPasswordMachineRejectsInvalidPasscode() {
+        val (success, message) = com.yugioh.recomp.core.engine.DdsCampaignManager.unlockCardViaPasscode("00000000")
+        assertFalse("Invalid passcode should fail", success)
+        assertTrue("Message indicates invalid passcode", message.contains("Invalid passcode"))
+    }
+
+    @Test
+    fun testAiDuelTacticsProfilesAndDecisions() {
+        val kaibaProfile = com.yugioh.recomp.core.engine.AiDuelTactics.getProfile("Seto Kaiba")
+        assertEquals("Seto Kaiba", kaibaProfile.name)
+        assertEquals("Blue-Eyes White Dragon", kaibaProfile.signatureBossCard)
+        assertEquals(com.yugioh.recomp.core.engine.AiArchetype.DRAGON_POWER, kaibaProfile.archetype)
+
+        val yugiProfile = com.yugioh.recomp.core.engine.AiDuelTactics.getProfile("Yami Yugi")
+        assertEquals("Dark Magician", yugiProfile.signatureBossCard)
+        assertEquals(com.yugioh.recomp.core.engine.AiArchetype.TACTICAL_CONTROL, yugiProfile.archetype)
+
+        // Test boss summon dialogue
+        val kaibaQuote = com.yugioh.recomp.core.engine.AiDuelTactics.getBossSummonDialogue("Seto Kaiba", "Blue-Eyes White Dragon")
+        assertNotNull("Kaiba must have dialogue for Blue-Eyes", kaibaQuote)
+        assertTrue(kaibaQuote!!.contains("Burst Stream of Destruction"))
+    }
+
+    @Test
+    fun testFieldSpellActivationAndStatBuffs() {
+        val testEngine = DuelEngine()
+        testEngine.startDuel("Joey Wheeler")
+
+        val yami = Card(id = 600, name = "Yami", atk = 0, def = 0, level = 0, attribute = CardAttribute.SPELL, cardType = CardType.SPELL, monsterType = MonsterType.NONE)
+        testEngine.player.hand.add(DuelCard(card = yami))
+        val handIdx = testEngine.player.hand.size - 1
+
+        assertTrue("Activate Yami field spell", testEngine.activateSpell(isPlayer = true, handIndex = handIdx))
+        assertNotNull("Active field spell set to Yami", testEngine.activeFieldSpell)
+        assertEquals("Yami", testEngine.activeFieldSpell?.name)
+
+        // Dark Magician (SPELLCASTER) should gain +200 ATK/DEF from Yami
+        val darkMagician = Card(id = 14, name = "Dark Magician", atk = 2500, def = 2100, level = 7, attribute = CardAttribute.DARK, cardType = CardType.MONSTER, monsterType = MonsterType.SPELLCASTER)
+        assertEquals(2700, testEngine.getEffectiveAtk(darkMagician))
+        assertEquals(2300, testEngine.getEffectiveDef(darkMagician))
+    }
 }
