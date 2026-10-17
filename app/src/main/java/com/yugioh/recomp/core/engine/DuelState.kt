@@ -23,7 +23,9 @@ data class DuelCard(
     var canChangePosition: Boolean = true,
     var turnsOnField: Int = 0,
     val equippedCards: MutableList<Card> = mutableListOf(),
-    var equippedTargetSlot: Int? = null
+    var equippedTargetSlot: Int? = null,
+    var isToken: Boolean = false,
+    var canBeTributed: Boolean = true
 ) {
     val maxAttacksPerTurn: Int
         get() = if (card.name == "Hayabusa Knight" || card.name == "Mataza the Zapper") 2 else 1
@@ -96,7 +98,6 @@ class Duelist(
         monsterZones.any { it != null && !it.position.isFaceDown && it.card.name == cardName }
 
     fun resetTurnActions() {
-        if (swordsTurnsRemaining > 0) swordsTurnsRemaining--
         isWabokuActive = false
         temporaryAtkBuffs.clear()
         for (monster in monsterZones) {

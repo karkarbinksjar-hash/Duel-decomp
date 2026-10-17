@@ -59,6 +59,43 @@ class DuelEngine {
     fun isToonWorldActive(duelist: Duelist): Boolean =
         duelist.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Toon World" }
 
+    fun isChainEnergyActive(): Boolean =
+        player.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Chain Energy" } ||
+        opponent.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Chain Energy" }
+
+    fun isTollActive(): Boolean =
+        player.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Toll" } ||
+        opponent.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Toll" }
+
+    fun applyChainEnergyTax(duelist: Duelist, actionName: String) {
+        if (isChainEnergyActive() && duelist.lifePoints > 0) {
+            val tax = 500.coerceAtMost(duelist.lifePoints)
+            duelist.lifePoints -= tax
+            log("⚡ CHAIN ENERGY: ${duelist.name} paid $tax LP to $actionName! (${duelist.lifePoints} LP remaining)")
+            checkWinConditions()
+        }
+    }
+
+    fun decrementSwordsOfRevealingLight(endingDuelist: Duelist) {
+        if (endingDuelist.swordsTurnsRemaining > 0) {
+            endingDuelist.swordsTurnsRemaining--
+            if (endingDuelist.swordsTurnsRemaining == 0) {
+                val opponentOfEnding = if (endingDuelist === player) opponent else player
+                for (i in 0 until 5) {
+                    val st = opponentOfEnding.spellTrapZones[i]
+                    if (st != null && st.card.name == "Swords of Revealing Light") {
+                        opponentOfEnding.spellTrapZones[i] = null
+                        opponentOfEnding.graveyard.add(st.card)
+                        log("⚔️ Swords of Revealing Light expired after 3 turns and shattered!")
+                        break
+                    }
+                }
+            } else {
+                log("⚔️ Swords of Revealing Light: ${endingDuelist.swordsTurnsRemaining} turn(s) remaining for ${endingDuelist.name}.")
+            }
+        }
+    }
+
     fun checkKuribohHandTrap(victim: Duelist, incomingDamage: Int): Int {
         if (incomingDamage <= 0) return 0
         val kuribohIdx = victim.hand.indexOfFirst { it.card.name == "Kuriboh" }
@@ -255,7 +292,10 @@ class DuelEngine {
                 card.level in 5..6 -> 1
                 else -> 0
             }
-            val activeMonsters = duelist.activeMonstersCount()
+            val activeMonsters = (0 until 5).count {
+                val m = duelist.monsterZones[it]
+                m != null && m.canBeTributed && !m.isToken
+            }
             if (activeMonsters < tributesNeeded) {
                 return Pair(false, "Requires $tributesNeeded Tribute(s) on field ($activeMonsters available)")
             }
@@ -339,7 +379,9 @@ class DuelEngine {
             val actionDesc = if (tributesNeeded > 0) "Tribute Summoned" else if (setDefense) "Set" else "Normal Summoned"
             log("${duelist.name} $actionDesc [${card.name}] (ATK ${card.atk} / DEF ${card.def}) to Zone ${targetSlot + 1}.")
 
+            applyChainEnergyTax(duelist, if (setDefense) "Set monster" else "Summon [${card.name}]")
             checkTrapHole(opponentDuelist, duelist, targetSlot)
+            checkTorrentialTribute(opponentDuelist, duelist.monsterZones[targetSlot])
 
             return true
         }
@@ -382,7 +424,9 @@ class DuelEngine {
         hasNormalSummonedThisTurn = true
         log("${duelist.name} placed [${card.name}] in Zone ${targetSlot + 1}.")
 
+        applyChainEnergyTax(duelist, if (setDefense) "Set monster" else "Summon [${card.name}]")
         checkTrapHole(opponentDuelist, duelist, targetSlot)
+        checkTorrentialTribute(opponentDuelist, duelist.monsterZones[targetSlot])
 
         return true
     }
@@ -715,6 +759,84 @@ class DuelEngine {
         }
     }
 
+    private fun checkTorrentialTribute(trapOwner: Duelist, summonedMonster: DuelCard?) {
+        if (summonedMonster == null || isJinzoActive()) return
+        val trapSlot = (0 until 5).firstOrNull { slot ->
+            val t = trapOwner.spellTrapZones[slot]
+            t != null && t.position.isFaceDown && t.card.name == "Torrential Tribute"
+        }
+        if (trapSlot != null) {
+            val trapCard = trapOwner.spellTrapZones[trapSlot]!!.card
+            trapOwner.spellTrapZones[trapSlot] = null
+            trapOwner.graveyard.add(trapCard)
+
+            val summoningDuelist = if (trapOwner === player) opponent else player
+
+            // Summoning duelist counter-trap check: Seven Tools or Solemn Judgment
+            val counterSlot = (0 until 5).firstOrNull { slot ->
+                val t = summoningDuelist.spellTrapZones[slot]
+                t != null && t.position.isFaceDown && (t.card.name == "Seven Tools of the Bandit" || t.card.name == "Solemn Judgment")
+            }
+            if (counterSlot != null) {
+                val counterTrap = summoningDuelist.spellTrapZones[counterSlot]!!.card
+                if (counterTrap.name == "Seven Tools of the Bandit" && summoningDuelist.lifePoints > 1000) {
+                    summoningDuelist.lifePoints -= 1000
+                    summoningDuelist.spellTrapZones[counterSlot] = null
+                    summoningDuelist.graveyard.add(counterTrap)
+                    activeChain.clear()
+                    activeChain.add(ChainLink(1, trapCard, isPlayer = (trapOwner === player), isNegated = true, "Torrential Tribute Trigger"))
+                    activeChain.add(ChainLink(2, counterTrap, isPlayer = (summoningDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                    lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Seven Tools of the Bandit] negated [Chain Link 1: Torrential Tribute]!"
+                    log("⚡ CHAIN LINK 1: ${trapOwner.name} triggered Trap: [Torrential Tribute]!")
+                    log("⚡ CHAIN LINK 2: ${summoningDuelist.name} chains Counter-Trap: [Seven Tools of the Bandit] (Paid 1000 LP)!")
+                    log("❌ CHAIN RESOLUTION: [Seven Tools of the Bandit] negates and destroys [Torrential Tribute]!")
+                    return
+                } else if (counterTrap.name == "Solemn Judgment" && summoningDuelist.lifePoints > 1) {
+                    val cost = summoningDuelist.lifePoints / 2
+                    summoningDuelist.lifePoints -= cost
+                    summoningDuelist.spellTrapZones[counterSlot] = null
+                    summoningDuelist.graveyard.add(counterTrap)
+                    activeChain.clear()
+                    activeChain.add(ChainLink(1, trapCard, isPlayer = (trapOwner === player), isNegated = true, "Torrential Tribute Trigger"))
+                    activeChain.add(ChainLink(2, counterTrap, isPlayer = (summoningDuelist === player), isNegated = false, "Counter-Trap Negation"))
+                    lastChainSummary = "⛓️ CHAIN: [Chain Link 2: Solemn Judgment] negated [Chain Link 1: Torrential Tribute]!"
+                    log("⚡ CHAIN LINK 1: ${trapOwner.name} triggered Trap: [Torrential Tribute]!")
+                    log("⚡ CHAIN LINK 2: ${summoningDuelist.name} chains Counter-Trap: [Solemn Judgment] (Paid $cost LP)!")
+                    log("❌ CHAIN RESOLUTION: [Solemn Judgment] negates and destroys [Torrential Tribute]!")
+                    return
+                }
+            }
+
+            var count = 0
+            for (i in 0 until 5) {
+                player.monsterZones[i]?.let {
+                    cleanupMonsterEquips(it, player, opponent)
+                    if (!it.isToken) {
+                        player.graveyard.add(it.card)
+                        triggerGraveyardSearcher(it.card, player)
+                    }
+                    player.monsterZones[i] = null
+                    count++
+                }
+                opponent.monsterZones[i]?.let {
+                    cleanupMonsterEquips(it, opponent, player)
+                    if (!it.isToken) {
+                        opponent.graveyard.add(it.card)
+                        triggerGraveyardSearcher(it.card, opponent)
+                    }
+                    opponent.monsterZones[i] = null
+                    count++
+                }
+            }
+            lastTriggeredTrap = Pair("Torrential Tribute", -1)
+            log("🌊 TRAP TRIGGER: ${trapOwner.name} activated [Torrential Tribute]! A massive tidal wave destroyed all $count monster(s) on the field!")
+            checkWinConditions()
+        }
+    }
+
+    fun isContinuousOrEquipSpell(card: Card): Boolean =
+        card.name in listOf("Toon World", "Premature Burial", "Chain Energy", "Toll", "Swords of Revealing Light") || card.isEquipSpell
+
     /**
      * Activates a Spell card from the hand.
      */
@@ -726,6 +848,10 @@ class DuelEngine {
         val duelCard = duelist.hand[handIndex]
         val card = duelCard.card
         if (!card.isSpell) return false
+
+        if (card.name != "Chain Energy") {
+            applyChainEnergyTax(duelist, "Activate [${card.name}]")
+        }
 
         // Imperial Order check: negates all Spell cards
         val isImperialOrderActive = player.spellTrapZones.filterNotNull().any { !it.position.isFaceDown && it.card.name == "Imperial Order" } ||
@@ -789,7 +915,7 @@ class DuelEngine {
 
         resolveSpellEffect(duelist, opp, card, isPlayer, tempSlot)
 
-        val isContinuousOrEquip = card.name == "Toon World" || card.name == "Premature Burial" || card.isEquipSpell
+        val isContinuousOrEquip = isContinuousOrEquipSpell(card)
         if (isContinuousOrEquip) {
             duelist.spellTrapZones[tempSlot] = DuelCard(card = card, position = CardPosition.FACE_UP_SPELL_TRAP)
         } else {
@@ -871,7 +997,7 @@ class DuelEngine {
 
         resolveSpellEffect(duelist, other, card, isPlayer, slotIndex)
 
-        val isContinuousOrEquip = card.name == "Toon World" || card.name == "Premature Burial" || card.isEquipSpell
+        val isContinuousOrEquip = isContinuousOrEquipSpell(card)
         if (!isContinuousOrEquip && card.name !in listOf("Yami", "Forest", "Sogen", "Mountain", "Umi", "Wasteland")) {
             duelist.spellTrapZones[slotIndex] = null
             duelist.graveyard.add(card)
@@ -1185,6 +1311,28 @@ class DuelEngine {
                     log("🏆 CUP OF ACE (TAILS): Unlucky flip! ${opp.name} drew 2 cards!")
                 }
             }
+            "Scapegoat" -> {
+                var spawned = 0
+                for (s in 0 until 5) {
+                    if (duelist.monsterZones[s] == null) {
+                        duelist.monsterZones[s] = DuelCard(
+                            card = ToonAnimeArchetype.SHEEP_TOKEN,
+                            position = CardPosition.FACE_UP_DEFENSE,
+                            isToken = true,
+                            canBeTributed = false,
+                            canChangePosition = false
+                        )
+                        spawned++
+                    }
+                }
+                log("🐑 SCAPEGOAT: ${duelist.name} summoned $spawned Sheep Token(s) (0 ATK / 0 DEF) in Defense Position! (Tokens cannot be tributed for a Tribute Summon)")
+            }
+            "Chain Energy" -> {
+                log("⚡ CHAIN ENERGY: A web of electric chains envelops the arena! Both players must pay 500 LP for each card summoned, set, or activated from hand.")
+            }
+            "Toll" -> {
+                log("💰 TOLL: A golden toll bridge rises! Either player must pay 500 LP to declare an attack with any monster.")
+            }
         }
     }
 
@@ -1211,6 +1359,7 @@ class DuelEngine {
         duelCard.position = CardPosition.SET_SPELL_TRAP
         duelist.spellTrapZones[targetSlot] = duelCard
         log("${duelist.name} Set 1 card in Spell/Trap Zone.")
+        applyChainEnergyTax(duelist, "Set Spell/Trap")
         return true
     }
 
@@ -1315,6 +1464,65 @@ class DuelEngine {
                     log("Call of the Haunted: No monsters in Graveyard or Monster Zone is full.")
                 }
             }
+            "Ring of Destruction" -> {
+                val allFaceUpMonsters = mutableListOf<Pair<DuelCard, Duelist>>()
+                for (i in 0 until 5) {
+                    player.monsterZones[i]?.let {
+                        if (!it.position.isFaceDown) allFaceUpMonsters.add(Pair(it, player))
+                    }
+                    opponent.monsterZones[i]?.let {
+                        if (!it.position.isFaceDown) allFaceUpMonsters.add(Pair(it, opponent))
+                    }
+                }
+                val target = allFaceUpMonsters.maxByOrNull { it.first.card.atk }
+                if (target != null) {
+                    val (dCard, targetOwner) = target
+                    val burnDamage = dCard.card.atk
+                    val oppTargetOwner = if (targetOwner === player) opponent else player
+                    cleanupMonsterEquips(dCard, targetOwner, oppTargetOwner)
+                    val sIdx = targetOwner.monsterZones.indexOfFirst { it === dCard }
+                    if (sIdx != -1) {
+                        targetOwner.monsterZones[sIdx] = null
+                    }
+                    if (!dCard.isToken) {
+                        targetOwner.graveyard.add(dCard.card)
+                        triggerGraveyardSearcher(dCard.card, targetOwner)
+                    }
+
+                    player.lifePoints = (player.lifePoints - burnDamage).coerceAtLeast(0)
+                    opponent.lifePoints = (opponent.lifePoints - burnDamage).coerceAtLeast(0)
+
+                    log("💥 RING OF DESTRUCTION: Detonated [${dCard.card.name}]! Both players take $burnDamage effect damage! (Player: ${player.lifePoints} LP, Opponent: ${opponent.lifePoints} LP)")
+                    checkWinConditions()
+                } else {
+                    log("Ring of Destruction: No face-up monsters on the field to destroy.")
+                }
+            }
+            "Torrential Tribute" -> {
+                var count = 0
+                for (i in 0 until 5) {
+                    player.monsterZones[i]?.let {
+                        cleanupMonsterEquips(it, player, opponent)
+                        if (!it.isToken) {
+                            player.graveyard.add(it.card)
+                            triggerGraveyardSearcher(it.card, player)
+                        }
+                        player.monsterZones[i] = null
+                        count++
+                    }
+                    opponent.monsterZones[i]?.let {
+                        cleanupMonsterEquips(it, opponent, player)
+                        if (!it.isToken) {
+                            opponent.graveyard.add(it.card)
+                            triggerGraveyardSearcher(it.card, opponent)
+                        }
+                        opponent.monsterZones[i] = null
+                        count++
+                    }
+                }
+                log("🌊 TORRENTIAL TRIBUTE: A tidal wave swept away and destroyed all $count monster(s) on the field!")
+                checkWinConditions()
+            }
         }
         return true
     }
@@ -1326,6 +1534,7 @@ class DuelEngine {
         if (winner != null || currentPhase != DuelPhase.BATTLE_PHASE) return false
         val duelist = if (isPlayer) player else opponent
         if (duelist.swordsTurnsRemaining > 0) return false
+        if (isTollActive() && duelist.lifePoints < 500) return false
         val monster = duelist.monsterZones.getOrNull(slotIndex) ?: return false
         return monster.canDeclareAttack
     }
@@ -1375,6 +1584,16 @@ class DuelEngine {
         if (attackerDuelist.swordsTurnsRemaining > 0) {
             log("${attackerDuelist.name} cannot attack due to Swords of Revealing Light!")
             return false
+        }
+        if (isTollActive()) {
+            if (attackerDuelist.lifePoints < 500) {
+                log("${attackerDuelist.name} cannot pay 500 LP for Toll to declare an attack!")
+                return false
+            }
+            attackerDuelist.lifePoints -= 500
+            log("💰 TOLL: ${attackerDuelist.name} paid 500 LP to declare an attack! (${attackerDuelist.lifePoints} LP remaining)")
+            checkWinConditions()
+            if (winner != null) return true
         }
 
         // Waboku protection check
@@ -1722,8 +1941,10 @@ class DuelEngine {
             val flipPrefix = if (wasFaceDown) "Flipped face-up! " else ""
             if (aAtk > dDef) {
                 cleanupMonsterEquips(targetMonster, defenderDuelist, attackerDuelist)
-                defenderDuelist.graveyard.add(dCard)
-                triggerGraveyardSearcher(dCard, defenderDuelist)
+                if (!targetMonster.isToken) {
+                    defenderDuelist.graveyard.add(dCard)
+                    triggerGraveyardSearcher(dCard, defenderDuelist)
+                }
                 defenderDuelist.monsterZones[targetSlot] = null
 
                 clashState = ClashState(
@@ -1794,6 +2015,7 @@ class DuelEngine {
      */
     fun passTurn(autoRunAi: Boolean = true) {
         val currentDuelist = if (isPlayerTurn) player else opponent
+        decrementSwordsOfRevealingLight(currentDuelist)
         currentDuelist.resetTurnActions()
 
         // Return temporary controlled monsters (Change of Heart)
@@ -2142,6 +2364,7 @@ class DuelEngine {
                 declareAttack(attackerSlot = step.attackerSlot, targetSlot = step.defenderSlot)
             }
             is AiTurnStep.EndTurn -> {
+                decrementSwordsOfRevealingLight(opponent)
                 opponent.resetTurnActions()
                 isPlayerTurn = true
                 hasNormalSummonedThisTurn = false

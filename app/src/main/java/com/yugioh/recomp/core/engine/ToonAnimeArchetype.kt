@@ -127,6 +127,53 @@ object ToonAnimeArchetype {
         password = "97077563"
     )
 
+    val SHEEP_TOKEN = Card(
+        id = 9520,
+        name = "Sheep Token",
+        atk = 0,
+        def = 0,
+        level = 1,
+        attribute = CardAttribute.EARTH,
+        cardType = CardType.MONSTER,
+        monsterType = MonsterType.BEAST
+    )
+
+    val SCAPEGOAT = Card(
+        id = 9521,
+        name = "Scapegoat",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        password = "73915051"
+    )
+
+    val CHAIN_ENERGY = Card(
+        id = 9522,
+        name = "Chain Energy",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        password = "79323590"
+    )
+
+    val TOLL = Card(
+        id = 9523,
+        name = "Toll",
+        atk = 0,
+        def = 0,
+        level = 0,
+        attribute = CardAttribute.SPELL,
+        cardType = CardType.SPELL,
+        monsterType = MonsterType.NONE,
+        password = "82003859"
+    )
+
     val ALL_TOON_MONSTER_NAMES = setOf(
         "Blue-Eyes Toon Dragon",
         "Toon Summoned Skull",
